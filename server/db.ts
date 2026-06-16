@@ -1,19 +1,15 @@
-import { eq, and, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
-  InsertUser,
   users,
-  agents,
-  customers,
-  currencies,
-  agentWallets,
-  companyWallet,
-  transfers,
-  ledgerEntries,
+  offices,
+  officeBalances,
+  receipts,
+  receiptAttachments,
   auditLog,
-  transferConfirmations,
+  accountingEntries,
+  systemSettings,
 } from "../drizzle/schema";
-import { ENV } from "./_core/env";
+import { eq, and, or, like, desc, asc, gte, lte, sql } from "drizzle-orm";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -29,341 +25,475 @@ export async function getDb() {
   return _db;
 }
 
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
+async function D() {
+  const d = await getDb();
+  if (!d) throw new Error("Database not available");
+  return d;
+}
 
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
+// ─── Users ────────────────────────────────────────────────────────────────────
 
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod", "phone"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
-
-    if (user.isActive !== undefined) {
-      values.isActive = user.isActive;
-      updateSet.isActive = user.isActive;
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
+export async function upsertUser(data: {
+  id?: string;
+  openId: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  avatar?: string | null;
+  loginMethod?: string | null;
+  lastSignedIn?: Date | null;
+}) {
+  const d = await D();
+  const now = new Date();
+  // Use openId as id if no id provided
+  const id = data.id ?? data.openId;
+  await d
+    .insert(users)
+    .values({
+      id,
+      openId: data.openId,
+      name: data.name ?? undefined,
+      email: data.email ?? undefined,
+      phone: data.phone ?? undefined,
+      avatar: data.avatar ?? undefined,
+      loginMethod: data.loginMethod ?? undefined,
+      lastSignedIn: data.lastSignedIn ?? undefined,
+      role: "staff",
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        name: data.name ?? undefined,
+        email: data.email ?? undefined,
+        phone: data.phone ?? undefined,
+        avatar: data.avatar ?? undefined,
+        loginMethod: data.loginMethod ?? undefined,
+        lastSignedIn: data.lastSignedIn ?? undefined,
+        updatedAt: now,
+      },
     });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  return d.select().from(users).where(eq(users.openId, data.openId)).then((r) => r[0]);
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
+  const d = await D();
+  return d.select().from(users).where(eq(users.openId, openId)).then((r) => r[0] ?? null);
+}
 
-  const result = await db
+export async function getUserById(id: string) {
+  const d = await D();
+  return d.select().from(users).where(eq(users.id, id)).then((r) => r[0] ?? null);
+}
+
+export async function getAllUsers() {
+  const d = await D();
+  return d.select().from(users).orderBy(asc(users.name));
+}
+
+export async function updateUserRole(id: string, role: "admin" | "staff" | "agent") {
+  const d = await D();
+  await d.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, id));
+}
+
+// ─── Offices ──────────────────────────────────────────────────────────────────
+
+export async function createOffice(data: {
+  code: string;
+  name: string;
+  city?: string;
+  country?: string;
+  phone?: string;
+  managerName?: string;
+  userId?: string;
+  notes?: string;
+}) {
+  const d = await D();
+  const result = await d.insert(offices).values(data);
+  return d.select().from(offices).where(eq(offices.id, result[0].insertId)).then((r) => r[0]);
+}
+
+export async function getAllOffices(activeOnly = false) {
+  const d = await D();
+  if (activeOnly) return d.select().from(offices).where(eq(offices.isActive, true)).orderBy(asc(offices.name));
+  return d.select().from(offices).orderBy(asc(offices.name));
+}
+
+export async function getOfficeById(id: number) {
+  const d = await D();
+  return d.select().from(offices).where(eq(offices.id, id)).then((r) => r[0] ?? null);
+}
+
+export async function getOfficeByUserId(userId: string) {
+  const d = await D();
+  return d.select().from(offices).where(eq(offices.userId, userId)).then((r) => r[0] ?? null);
+}
+
+export async function updateOffice(id: number, data: Partial<typeof offices.$inferInsert>) {
+  const d = await D();
+  await d.update(offices).set({ ...data, updatedAt: Date.now() }).where(eq(offices.id, id));
+  return getOfficeById(id);
+}
+
+// ─── Office Balances ──────────────────────────────────────────────────────────
+
+export async function getOfficeBalance(officeId: number, currencyCode: string) {
+  const d = await D();
+  return d
     .select()
-    .from(users)
-    .where(eq(users.openId, openId))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+    .from(officeBalances)
+    .where(and(eq(officeBalances.officeId, officeId), eq(officeBalances.currencyCode, currencyCode)))
+    .then((r) => r[0] ?? null);
 }
 
-// ============ AGENTS ============
-
-export async function getAgentByUserId(userId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db
-    .select()
-    .from(agents)
-    .where(eq(agents.userId, userId))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+export async function getOfficeBalances(officeId: number) {
+  const d = await D();
+  return d.select().from(officeBalances).where(eq(officeBalances.officeId, officeId));
 }
 
-export async function getAgentById(agentId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db
-    .select()
-    .from(agents)
-    .where(eq(agents.id, agentId))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function getAllAgents() {
-  const db = await getDb();
-  if (!db) return [];
-
-  return await db.select().from(agents).where(eq(agents.isActive, true));
-}
-
-// ============ CUSTOMERS ============
-
-export async function getCustomerById(customerId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.id, customerId))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function getAllCustomers() {
-  const db = await getDb();
-  if (!db) return [];
-
-  return await db.select().from(customers).where(eq(customers.isActive, true));
-}
-
-// ============ WALLETS ============
-
-export async function getAgentWallet(agentId: number, currencyCode: string) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db
-    .select()
-    .from(agentWallets)
-    .where(
-      and(
-        eq(agentWallets.agentId, agentId),
-        eq(agentWallets.currencyCode, currencyCode)
-      )
-    )
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function getCompanyWallet(currencyCode: string) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db
-    .select()
-    .from(companyWallet)
-    .where(eq(companyWallet.currencyCode, currencyCode))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function getAgentWallets(agentId: number) {
-  const db = await getDb();
-  if (!db) return [];
-
-  return await db
-    .select()
-    .from(agentWallets)
-    .where(eq(agentWallets.agentId, agentId));
-}
-
-// ============ TRANSFERS ============
-
-export async function getTransferByNotificationNumber(
-  notificationNumber: string
-) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db
-    .select()
-    .from(transfers)
-    .where(eq(transfers.notificationNumber, notificationNumber))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function getTransferById(transferId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db
-    .select()
-    .from(transfers)
-    .where(eq(transfers.id, transferId))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function getAgentTransfers(agentId: number) {
-  const db = await getDb();
-  if (!db) return [];
-
-  return await db
-    .select()
-    .from(transfers)
-    .where(eq(transfers.agentId, agentId))
-    .orderBy(desc(transfers.createdAt));
-}
-
-export async function getPendingTransfers() {
-  const db = await getDb();
-  if (!db) return [];
-
-  return await db
-    .select()
-    .from(transfers)
-    .where(eq(transfers.status, "pending"))
-    .orderBy(desc(transfers.createdAt));
-}
-
-// ============ AUDIT LOG ============
-
-export async function logAuditAction(
-  userId: number,
-  action: string,
-  entityType: string,
-  entityId: number | null,
-  details: Record<string, unknown> | null,
-  ipAddress?: string,
-  userAgent?: string
-) {
-  const db = await getDb();
-  if (!db) return;
-
-  try {
-    await db.insert(auditLog).values({
-      userId,
-      action,
-      entityType,
-      entityId,
-      details: details ? JSON.stringify(details) : null,
-      ipAddress,
-      userAgent,
+export async function incrementOfficeBalance(officeId: number, currencyCode: string, amount: string) {
+  const d = await D();
+  await d
+    .insert(officeBalances)
+    .values({ officeId, currencyCode, balance: amount })
+    .onDuplicateKeyUpdate({
+      set: { balance: sql`balance + ${amount}`, updatedAt: Date.now() },
     });
-  } catch (error) {
-    console.error("[Database] Failed to log audit action:", error);
-  }
+  return getOfficeBalance(officeId, currencyCode);
 }
 
-export async function getAuditLog(limit: number = 100, offset: number = 0) {
-  const db = await getDb();
-  if (!db) return [];
+// ─── Receipts ─────────────────────────────────────────────────────────────────
 
-  return await db
+function generateNotificationNumber(): string {
+  const prefix = "SD";
+  const timestamp = Date.now().toString().slice(-7);
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+  return `${prefix}${timestamp}${random}`;
+}
+
+function generateVerificationCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function generateSecretPin(): string {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+export async function createReceipt(data: {
+  payerName: string;
+  payerPhone?: string;
+  payerCountry?: string;
+  amount: string;
+  currencyCode: string;
+  officeId: number;
+  validityDays?: number;
+  notes?: string;
+  createdByUserId: string;
+  status?: "draft" | "pending_deposit";
+}) {
+  const d = await D();
+  const notificationNumber = generateNotificationNumber();
+  const verificationCode = generateVerificationCode();
+  const secretPin = generateSecretPin();
+  const validityDays = data.validityDays ?? 7;
+  const expiresAt = Date.now() + validityDays * 24 * 60 * 60 * 1000;
+
+  const result = await d.insert(receipts).values({
+    notificationNumber,
+    verificationCode,
+    secretPin,
+    payerName: data.payerName,
+    payerPhone: data.payerPhone,
+    payerCountry: data.payerCountry,
+    amount: data.amount,
+    currencyCode: data.currencyCode,
+    officeId: data.officeId,
+    validityDays,
+    expiresAt,
+    notes: data.notes,
+    createdByUserId: data.createdByUserId,
+    status: data.status ?? "pending_deposit",
+  });
+
+  return d.select().from(receipts).where(eq(receipts.id, result[0].insertId)).then((r) => r[0]);
+}
+
+export async function getReceiptById(id: number) {
+  const d = await D();
+  return d.select().from(receipts).where(eq(receipts.id, id)).then((r) => r[0] ?? null);
+}
+
+export async function getReceiptByNotificationNumber(notificationNumber: string) {
+  const d = await D();
+  return d
     .select()
-    .from(auditLog)
-    .orderBy(desc(auditLog.createdAt))
-    .limit(limit)
-    .offset(offset);
+    .from(receipts)
+    .where(eq(receipts.notificationNumber, notificationNumber))
+    .then((r) => r[0] ?? null);
 }
 
-// ============ CURRENCIES ============
-
-export async function getAllCurrencies() {
-  const db = await getDb();
-  if (!db) return [];
-
-  return await db
+export async function getReceiptByVerificationCode(verificationCode: string) {
+  const d = await D();
+  return d
     .select()
-    .from(currencies)
-    .where(eq(currencies.isActive, true));
+    .from(receipts)
+    .where(eq(receipts.verificationCode, verificationCode))
+    .then((r) => r[0] ?? null);
 }
 
-export async function initializeCurrencies() {
-  const db = await getDb();
-  if (!db) return;
+export async function searchReceipts(params: {
+  query?: string;
+  officeId?: number;
+  status?: string;
+  fromDate?: number;
+  toDate?: number;
+  limit?: number;
+  offset?: number;
+}) {
+  const d = await D();
+  const conditions: ReturnType<typeof eq>[] = [];
 
-  const currencyList = [
-    { code: "EUR", name: "Euro", symbol: "€" },
-    { code: "USD", name: "US Dollar", symbol: "$" },
-    { code: "USDT", name: "Tether", symbol: "₮" },
-    { code: "AED", name: "UAE Dirham", symbol: "د.إ" },
-    { code: "SAR", name: "Saudi Riyal", symbol: "﷼" },
-    { code: "SDG", name: "Sudanese Pound", symbol: "£" },
-  ];
-
-  for (const curr of currencyList) {
-    try {
-      await db
-        .insert(currencies)
-        .values(curr)
-        .onDuplicateKeyUpdate({
-          set: { name: curr.name, symbol: curr.symbol },
-        });
-    } catch (error) {
-      console.error(`[Database] Failed to insert currency ${curr.code}:`, error);
-    }
+  if (params.query) {
+    const q = `%${params.query}%`;
+    conditions.push(
+      or(
+        like(receipts.notificationNumber, q),
+        like(receipts.verificationCode, q),
+        like(receipts.payerName, q),
+        like(receipts.payerPhone, q)
+      ) as any
+    );
   }
+
+  if (params.officeId) conditions.push(eq(receipts.officeId, params.officeId) as any);
+  if (params.status) conditions.push(eq(receipts.status, params.status as any) as any);
+  if (params.fromDate) conditions.push(gte(receipts.createdAt, params.fromDate) as any);
+  if (params.toDate) conditions.push(lte(receipts.createdAt, params.toDate) as any);
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [rows, countResult] = await Promise.all([
+    d.select().from(receipts).where(where).orderBy(desc(receipts.createdAt))
+      .limit(params.limit ?? 50).offset(params.offset ?? 0),
+    d.select({ count: sql<number>`count(*)` }).from(receipts).where(where),
+  ]);
+
+  return { rows, total: Number(countResult[0]?.count ?? 0) };
 }
 
-export async function initializeCompanyWallets() {
-  const db = await getDb();
-  if (!db) return;
+export async function getReceiptsForOffice(officeId: number, limit = 50) {
+  const d = await D();
+  return d.select().from(receipts).where(eq(receipts.officeId, officeId))
+    .orderBy(desc(receipts.createdAt)).limit(limit);
+}
 
-  const currencyList = ["EUR", "USD", "USDT", "AED", "SAR", "SDG"];
+export async function confirmReceiptDeposit(params: {
+  receiptId: number;
+  receivedByUserId: string;
+  receivedNotes?: string;
+}) {
+  const receipt = await getReceiptById(params.receiptId);
+  if (!receipt) throw new Error("الإيصال غير موجود");
+  if (receipt.status === "received") throw new Error("تم تأكيد استلام هذا الإيصال مسبقاً");
+  if (receipt.status === "cancelled") throw new Error("هذا الإيصال ملغى");
+  if (receipt.status === "expired") throw new Error("انتهت صلاحية هذا الإيصال");
 
-  for (const code of currencyList) {
-    try {
-      await db
-        .insert(companyWallet)
-        .values({
-          currencyCode: code,
-          balance: "0",
-          totalTransferred: "0",
-        })
-        .onDuplicateKeyUpdate({
-          set: { balance: "0", totalTransferred: "0" },
-        });
-    } catch (error) {
-      console.error(
-        `[Database] Failed to initialize company wallet for ${code}:`,
-        error
-      );
-    }
-  }
+  const d = await D();
+  const now = Date.now();
+
+  const balanceBefore = await getOfficeBalance(receipt.officeId, receipt.currencyCode);
+  const balanceBeforeAmount = balanceBefore?.balance ?? "0";
+
+  await d.update(receipts).set({
+    status: "received",
+    receivedByUserId: params.receivedByUserId,
+    receivedAt: now,
+    receivedNotes: params.receivedNotes,
+    updatedAt: now,
+  }).where(eq(receipts.id, params.receiptId));
+
+  const newBalance = await incrementOfficeBalance(receipt.officeId, receipt.currencyCode, receipt.amount);
+
+  await d.insert(accountingEntries).values({
+    receiptId: receipt.id,
+    officeId: receipt.officeId,
+    entryType: "deposit_received",
+    amount: receipt.amount,
+    currencyCode: receipt.currencyCode,
+    balanceBefore: balanceBeforeAmount,
+    balanceAfter: newBalance?.balance ?? receipt.amount,
+    createdByUserId: params.receivedByUserId,
+    createdAt: now,
+  });
+
+  return getReceiptById(params.receiptId);
+}
+
+export async function cancelReceipt(params: {
+  receiptId: number;
+  cancelledByUserId: string;
+  cancelReason?: string;
+}) {
+  const receipt = await getReceiptById(params.receiptId);
+  if (!receipt) throw new Error("الإيصال غير موجود");
+  if (receipt.status === "received") throw new Error("لا يمكن إلغاء إيصال تم استلامه");
+  if (receipt.status === "cancelled") throw new Error("الإيصال ملغى مسبقاً");
+
+  const d = await D();
+  await d.update(receipts).set({
+    status: "cancelled",
+    cancelledByUserId: params.cancelledByUserId,
+    cancelledAt: Date.now(),
+    cancelReason: params.cancelReason,
+    updatedAt: Date.now(),
+  }).where(eq(receipts.id, params.receiptId));
+
+  return getReceiptById(params.receiptId);
+}
+
+export async function expireOldReceipts() {
+  const d = await D();
+  const now = Date.now();
+  await d.update(receipts).set({ status: "expired", updatedAt: now }).where(
+    and(eq(receipts.status, "pending_deposit"), lte(receipts.expiresAt, now))
+  );
+}
+
+// ─── Receipt Attachments ──────────────────────────────────────────────────────
+
+export async function addReceiptAttachment(data: {
+  receiptId: number;
+  uploadedByUserId: string;
+  fileKey: string;
+  fileUrl: string;
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
+  description?: string;
+}) {
+  const d = await D();
+  const result = await d.insert(receiptAttachments).values(data);
+  return d.select().from(receiptAttachments).where(eq(receiptAttachments.id, result[0].insertId)).then((r) => r[0]);
+}
+
+export async function getReceiptAttachments(receiptId: number) {
+  const d = await D();
+  return d.select().from(receiptAttachments).where(eq(receiptAttachments.receiptId, receiptId))
+    .orderBy(desc(receiptAttachments.createdAt));
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+export async function writeAuditLog(data: {
+  entityType: string;
+  entityId: string;
+  action: string;
+  actorUserId?: string;
+  actorName?: string;
+  actorRole?: string;
+  previousValue?: object;
+  newValue?: object;
+  ipAddress?: string;
+  userAgent?: string;
+  notes?: string;
+}) {
+  const d = await D();
+  await d.insert(auditLog).values({
+    ...data,
+    previousValue: data.previousValue ? JSON.stringify(data.previousValue) : undefined,
+    newValue: data.newValue ? JSON.stringify(data.newValue) : undefined,
+  });
+}
+
+export async function getAuditLogForReceipt(receiptId: number) {
+  const d = await D();
+  return d.select().from(auditLog)
+    .where(and(eq(auditLog.entityType, "receipt"), eq(auditLog.entityId, String(receiptId))))
+    .orderBy(desc(auditLog.createdAt));
+}
+
+export async function getAuditLog(params: {
+  entityType?: string;
+  entityId?: string;
+  actorUserId?: string;
+  fromDate?: number;
+  toDate?: number;
+  limit?: number;
+  offset?: number;
+}) {
+  const d = await D();
+  const conditions: any[] = [];
+  if (params.entityType) conditions.push(eq(auditLog.entityType, params.entityType));
+  if (params.entityId) conditions.push(eq(auditLog.entityId, params.entityId));
+  if (params.actorUserId) conditions.push(eq(auditLog.actorUserId, params.actorUserId));
+  if (params.fromDate) conditions.push(gte(auditLog.createdAt, params.fromDate));
+  if (params.toDate) conditions.push(lte(auditLog.createdAt, params.toDate));
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  return d.select().from(auditLog).where(where).orderBy(desc(auditLog.createdAt))
+    .limit(params.limit ?? 100).offset(params.offset ?? 0);
+}
+
+// ─── Dashboard Stats ──────────────────────────────────────────────────────────
+
+export async function getAdminDashboardStats() {
+  const d = await D();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayStartMs = todayStart.getTime();
+
+  const [totalResult, todayResult, pendingResult, receivedResult, cancelledResult, officeCount] = await Promise.all([
+    d.select({ count: sql<number>`count(*)` }).from(receipts),
+    d.select({ count: sql<number>`count(*)` }).from(receipts).where(gte(receipts.createdAt, todayStartMs)),
+    d.select({ count: sql<number>`count(*)` }).from(receipts).where(eq(receipts.status, "pending_deposit")),
+    d.select({ count: sql<number>`count(*)` }).from(receipts).where(eq(receipts.status, "received")),
+    d.select({ count: sql<number>`count(*)` }).from(receipts).where(eq(receipts.status, "cancelled")),
+    d.select({ count: sql<number>`count(*)` }).from(offices).where(eq(offices.isActive, true)),
+  ]);
+
+  return {
+    totalReceipts: Number(totalResult[0]?.count ?? 0),
+    todayReceipts: Number(todayResult[0]?.count ?? 0),
+    pendingReceipts: Number(pendingResult[0]?.count ?? 0),
+    receivedReceipts: Number(receivedResult[0]?.count ?? 0),
+    cancelledReceipts: Number(cancelledResult[0]?.count ?? 0),
+    activeOffices: Number(officeCount[0]?.count ?? 0),
+  };
+}
+
+export async function getOfficeDashboardStats(officeId: number) {
+  const d = await D();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayStartMs = todayStart.getTime();
+
+  const [todayTotal, todayReceived, allPending, balances] = await Promise.all([
+    d.select({ count: sql<number>`count(*)` }).from(receipts)
+      .where(and(eq(receipts.officeId, officeId), gte(receipts.createdAt, todayStartMs))),
+    d.select({ count: sql<number>`count(*)`, total: sql<string>`COALESCE(sum(amount), 0)` }).from(receipts)
+      .where(and(eq(receipts.officeId, officeId), eq(receipts.status, "received"), gte(receipts.receivedAt, todayStartMs))),
+    d.select({ count: sql<number>`count(*)` }).from(receipts)
+      .where(and(eq(receipts.officeId, officeId), eq(receipts.status, "pending_deposit"))),
+    getOfficeBalances(officeId),
+  ]);
+
+  return {
+    todayTotal: Number(todayTotal[0]?.count ?? 0),
+    todayReceived: Number(todayReceived[0]?.count ?? 0),
+    todayReceivedAmount: todayReceived[0]?.total ?? "0",
+    allPending: Number(allPending[0]?.count ?? 0),
+    balances,
+  };
+}
+
+// ─── System Settings ──────────────────────────────────────────────────────────
+
+export async function getSetting(key: string): Promise<string | null> {
+  const d = await D();
+  const row = await d.select().from(systemSettings).where(eq(systemSettings.key, key)).then((r) => r[0]);
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string) {
+  const d = await D();
+  await d.insert(systemSettings).values({ key, value }).onDuplicateKeyUpdate({ set: { value, updatedAt: new Date() } });
 }

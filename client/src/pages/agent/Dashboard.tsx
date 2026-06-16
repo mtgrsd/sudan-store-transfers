@@ -27,16 +27,13 @@ export default function AgentDashboard() {
     if (!user) setLocation("/");
   }, [user, setLocation]);
 
-  const { data: profile } = trpc.agent.getMyProfile.useQuery(undefined, { enabled: !!user });
-  const { data: transfers = [] } = trpc.transfer.getMyTransfers.useQuery(undefined, { enabled: !!user });
+  const { data: transfers = [] } = trpc.receipt.getMyOfficeReceipts.useQuery(undefined, { enabled: !!user });
 
   if (!user) return null;
 
-  const pendingTransfers = (transfers as any[]).filter((t: any) => t.status === "pending");
-  const disbursedTransfers = (transfers as any[]).filter(
-    (t: any) => t.status === "disbursed" || t.status === "confirmed"
-  );
-  const wallets: any[] = (profile as any)?.wallets || [];
+  const pendingTransfers = (transfers as any[]).filter((t: any) => t.status === "pending_deposit");
+  const disbursedTransfers = (transfers as any[]).filter((t: any) => t.status === "received");
+  const wallets: any[] = [];
 
   return (
     <div
@@ -89,7 +86,7 @@ export default function AgentDashboard() {
               مرحباً بك في متجر السودان
             </div>
             <div style={{ fontSize: "1.2rem", fontWeight: "800", marginBottom: "0.5rem" }}>
-              {(profile as any)?.name || user.name || "الوكيل"}
+              {user.name || "الوكيل"}
             </div>
             <div
               style={{
@@ -103,7 +100,7 @@ export default function AgentDashboard() {
               }}
             >
               <span>🏢</span>
-              <span>{(profile as any)?.officeName || "وكيل معتمد"}</span>
+              <span>وكيل معتمد</span>
             </div>
           </div>
         </div>

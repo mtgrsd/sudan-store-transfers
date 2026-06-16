@@ -1,719 +1,459 @@
+import { useState, useEffect } from "react";
+import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
-import { useEffect, useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import SudanStoreHeader from "@/components/SudanStoreHeader";
-import TransferReceipt from "@/components/TransferReceipt";
+import { Plus, Search, Eye, XCircle, RefreshCw, FileText } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import TransferReceipt from "@/components/TransferReceipt";
 
-const CURRENCIES = ["USD", "EUR", "USDT", "AED", "SAR", "SDG"];
+const LOGO_URL = "/manus-storage/sudan-store-logo_c9d76f93.png";
 
-const CURRENCY_NAMES: Record<string, string> = {
-  USD: "دولار أمريكي",
-  EUR: "يورو",
-  USDT: "تيثر",
-  AED: "درهم إماراتي",
-  SAR: "ريال سعودي",
-  SDG: "جنيه سوداني",
+const statusLabels: Record<string, string> = {
+  pending_deposit: "بانتظار الإيداع",
+  received: "مستلم",
+  cancelled: "ملغى",
+  expired: "منتهي الصلاحية",
+  draft: "مسودة",
 };
 
-const ADMIN_NAV = [
-  { label: "الرئيسية", href: "/admin" },
-  { label: "الوكلاء", href: "/admin/agents" },
-  { label: "العملاء", href: "/admin/customers" },
-  { label: "الحوالات", href: "/admin/transfers" },
-  { label: "سجل التدقيق", href: "/admin/audit-log" },
-];
+const statusVariants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  pending_deposit: "secondary",
+  received: "default",
+  cancelled: "destructive",
+  expired: "outline",
+  draft: "outline",
+};
 
-export default function AdminTransfers() {
+const CURRENCIES = ["USD", "EUR", "USDT", "AED", "SAR", "SDG", "GBP"];
+
+export default function AdminReceipts() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createdTransfer, setCreatedTransfer] = useState<any>(null);
-  const [showReceipt, setShowReceipt] = useState(false);
-  const [formData, setFormData] = useState({
-    agentId: "",
-    customerId: "",
+  const [showCreate, setShowCreate] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
+  const [showCancel, setShowCancel] = useState<number | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [showReceiptPrint, setShowReceiptPrint] = useState<any>(null);
+
+  const [form, setForm] = useState({
+    payerName: "",
+    payerPhone: "",
+    payerCountry: "",
     amount: "",
     currencyCode: "USD",
+    officeId: "",
+    validityDays: "7",
     notes: "",
   });
 
+  const utils = trpc.useUtils();
+
+  const { data: offices = [] } = trpc.office.getAll.useQuery({ activeOnly: true });
+
+  const { data: searchResult, isLoading } = trpc.receipt.search.useQuery({
+    query: searchQuery || undefined,
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    limit: 50,
+    offset: 0,
+  });
+
+  const createMutation = trpc.receipt.create.useMutation({
+    onSuccess: (receipt) => {
+      toast.success(`تم إنشاء الإيصال: ${receipt.notificationNumber}`);
+      utils.receipt.search.invalidate();
+      utils.dashboard.getStats.invalidate();
+      setShowCreate(false);
+      setForm({ payerName: "", payerPhone: "", payerCountry: "", amount: "", currencyCode: "USD", officeId: "", validityDays: "7", notes: "" });
+      setSelectedReceipt(receipt);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const cancelMutation = trpc.receipt.cancel.useMutation({
+    onSuccess: () => {
+      toast.success("تم إلغاء الإيصال");
+      utils.receipt.search.invalidate();
+      setShowCancel(null);
+      setCancelReason("");
+      setSelectedReceipt(null);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   useEffect(() => {
-    if (!user || user.role !== "admin") {
+    if (user && user.role !== "admin" && user.role !== "staff") {
       setLocation("/");
     }
   }, [user, setLocation]);
 
-  const { data: transfers = [], isLoading, refetch } = trpc.transfer.getPending.useQuery(
-    undefined,
-    { enabled: !!user && user.role === "admin" }
-  );
-
-  const { data: agents = [] } = trpc.agent.getAll.useQuery(undefined, {
-    enabled: !!user && user.role === "admin",
-  });
-
-  const { data: customers = [] } = trpc.customer.getAll.useQuery(undefined, {
-    enabled: !!user && user.role === "admin",
-  });
-
-  const createTransferMutation = trpc.transfer.create.useMutation({
-    onSuccess: (data) => {
-      setCreatedTransfer(data.transfer);
-      setShowCreateForm(false);
-      setFormData({ agentId: "", customerId: "", amount: "", currencyCode: "USD", notes: "" });
-      refetch();
-      toast.success("تم إنشاء الحوالة بنجاح!");
-    },
-    onError: (error) => {
-      toast.error(error.message || "فشل إنشاء الحوالة");
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    createTransferMutation.mutate({
-      agentId: parseInt(formData.agentId) || 0,
-      customerId: parseInt(formData.customerId) || 0,
-      amount: formData.amount,
-      currencyCode: formData.currencyCode,
-      notes: formData.notes,
+  const handleCreate = () => {
+    if (!form.payerName || !form.amount || !form.officeId) {
+      toast.error("يرجى ملء الحقول المطلوبة: اسم الدافع، المبلغ، المكتب");
+      return;
+    }
+    createMutation.mutate({
+      payerName: form.payerName,
+      payerPhone: form.payerPhone || undefined,
+      payerCountry: form.payerCountry || undefined,
+      amount: form.amount,
+      currencyCode: form.currencyCode,
+      officeId: parseInt(form.officeId),
+      validityDays: parseInt(form.validityDays) || 7,
+      notes: form.notes || undefined,
     });
   };
 
-  if (!user || user.role !== "admin") return null;
-
-  const selectedAgent = agents.find((a: any) => a.id === parseInt(formData.agentId));
-  const selectedCustomer = customers.find((c: any) => c.id === parseInt(formData.customerId));
+  if (!user) return null;
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f1f5f9", fontFamily: "'Cairo', sans-serif" }}>
-      <SudanStoreHeader navItems={ADMIN_NAV} currentPath="/admin/transfers" />
-
-      <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "1.5rem 1rem" }}>
-        {/* Page Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "1.5rem",
-            flexWrap: "wrap",
-            gap: "1rem",
-          }}
-        >
-          <div>
-            <h2 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#1a2e6b" }}>
-              💸 إدارة الحوالات
-            </h2>
-            <p style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: "0.2rem" }}>
-              إنشاء وإدارة التحويلات المالية
-            </p>
+    <div className="min-h-screen bg-slate-50" dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }}>
+      {/* Header */}
+      <header className="bg-gradient-to-l from-blue-900 to-blue-700 text-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img src={LOGO_URL} alt="متجر السودان" className="h-10 w-auto" />
+            <div>
+              <h1 className="text-lg font-bold">متجر السودان</h1>
+              <p className="text-xs text-blue-200">إدارة الإيصالات</p>
+            </div>
           </div>
-          <button
-            onClick={() => setShowCreateForm(!showCreateForm)}
-            style={{
-              background: showCreateForm
-                ? "linear-gradient(135deg, #dc2626, #b91c1c)"
-                : "linear-gradient(135deg, #1a2e6b, #2563eb)",
-              color: "white",
-              border: "none",
-              borderRadius: "0.75rem",
-              padding: "0.75rem 1.5rem",
-              fontSize: "0.9rem",
-              fontWeight: "700",
-              fontFamily: "'Cairo', sans-serif",
-              cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(26,46,107,0.3)",
-            }}
-          >
-            {showCreateForm ? "✕ إلغاء" : "➕ إنشاء حوالة جديدة"}
-          </button>
+          <nav className="hidden md:flex items-center gap-1">
+            {[
+              { label: "الرئيسية", href: "/admin" },
+              { label: "الإيصالات", href: "/admin/receipts" },
+              { label: "المكاتب", href: "/admin/offices" },
+              { label: "سجل التدقيق", href: "/admin/audit-log" },
+            ].map((item) => (
+              <button key={item.href} onClick={() => setLocation(item.href)}
+                className="px-3 py-1.5 text-sm rounded-md hover:bg-white/20 transition-colors">
+                {item.label}
+              </button>
+            ))}
+          </nav>
+          <Button onClick={() => setShowCreate(true)} className="bg-white text-blue-800 hover:bg-blue-50">
+            <Plus className="w-4 h-4 ml-1" />
+            إيصال جديد
+          </Button>
         </div>
+      </header>
 
-        {/* Created Transfer Success Card */}
-        {createdTransfer && (
-          <div
-            style={{
-              backgroundColor: "white",
-              borderRadius: "1rem",
-              padding: "1.5rem",
-              marginBottom: "1.5rem",
-              border: "2px solid #bbf7d0",
-              boxShadow: "0 4px 20px rgba(5,150,105,0.15)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: "1rem",
-                flexWrap: "wrap",
-                gap: "0.5rem",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <span style={{ fontSize: "1.5rem" }}>✅</span>
-                <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#065f46" }}>
-                  تم إنشاء الحوالة بنجاح!
-                </h3>
-              </div>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button
-                  onClick={() => setShowReceipt(true)}
-                  style={{
-                    background: "#1a2e6b",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "0.5rem",
-                    padding: "0.5rem 1rem",
-                    fontSize: "0.8rem",
-                    fontFamily: "'Cairo', sans-serif",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                  }}
-                >
-                  🧾 طباعة الإيصال
-                </button>
-                <button
-                  onClick={() => setCreatedTransfer(null)}
-                  style={{
-                    background: "#f1f5f9",
-                    color: "#374151",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "0.5rem",
-                    padding: "0.5rem 1rem",
-                    fontSize: "0.8rem",
-                    fontFamily: "'Cairo', sans-serif",
-                    cursor: "pointer",
-                  }}
-                >
-                  ✕ إغلاق
-                </button>
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: "1rem",
-              }}
-            >
-              {[
-                { label: "رقم الإشعار", value: createdTransfer.notificationNumber, mono: true, highlight: true },
-                { label: "الرقم السري", value: createdTransfer.secretCode, mono: true, highlight: true },
-                { label: "معرّف الحوالة", value: createdTransfer.transferId, mono: true, highlight: false },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  style={{
-                    backgroundColor: item.highlight ? "#f0fdf4" : "#f8fafc",
-                    borderRadius: "0.75rem",
-                    padding: "1rem",
-                    border: item.highlight ? "2px solid #bbf7d0" : "1px solid #e2e8f0",
-                    textAlign: "center",
-                  }}
-                >
-                  <div style={{ fontSize: "0.7rem", color: "#6b7280", marginBottom: "0.4rem" }}>
-                    {item.label}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: item.highlight ? "1.1rem" : "0.8rem",
-                      fontWeight: "800",
-                      color: item.highlight ? "#065f46" : "#374151",
-                      fontFamily: item.mono ? "monospace" : "'Cairo', sans-serif",
-                      letterSpacing: item.mono ? "0.1em" : "normal",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {item.value}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* QR Code Preview */}
-            <div
-              style={{
-                marginTop: "1rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "1rem",
-                padding: "1rem",
-                backgroundColor: "#f8fafc",
-                borderRadius: "0.75rem",
-                border: "1px solid #e2e8f0",
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ textAlign: "center" }}>
-                <QRCodeSVG
-                  value={`${window.location.origin}/verify/${createdTransfer.notificationNumber}`}
-                  size={80}
-                  level="M"
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-4">
+        {/* Search & Filter */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  placeholder="بحث برقم الإشعار، اسم الدافع، رقم الهاتف، كود التحقق..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pr-9"
                 />
-                <div style={{ fontSize: "0.65rem", color: "#9ca3af", marginTop: "0.3rem" }}>
-                  رمز QR للتحقق
-                </div>
               </div>
-              <div style={{ flex: 1, minWidth: "200px" }}>
-                <div
-                  style={{
-                    padding: "0.75rem",
-                    backgroundColor: "#fef3c7",
-                    borderRadius: "0.5rem",
-                    fontSize: "0.8rem",
-                    color: "#92400e",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
-                >
-                  <span>⚠️</span>
-                  <span>احتفظ بالرقم السري وأرسله للوكيل بشكل آمن. لن يُعرض مرة أخرى.</span>
-                </div>
-              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-52">
+                  <SelectValue placeholder="جميع الحالات" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">جميع الحالات</SelectItem>
+                  <SelectItem value="pending_deposit">بانتظار الإيداع</SelectItem>
+                  <SelectItem value="received">مستلم</SelectItem>
+                  <SelectItem value="cancelled">ملغى</SelectItem>
+                  <SelectItem value="expired">منتهي الصلاحية</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => utils.receipt.search.invalidate()}>
+                <RefreshCw className="w-4 h-4" />
+              </Button>
             </div>
-          </div>
-        )}
+          </CardContent>
+        </Card>
 
-        {/* Create Transfer Form */}
-        {showCreateForm && (
-          <div
-            style={{
-              backgroundColor: "white",
-              borderRadius: "1rem",
-              padding: "1.5rem",
-              marginBottom: "1.5rem",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
-              border: "2px solid #bfdbfe",
-            }}
-          >
-            <h3
-              style={{
-                fontSize: "1rem",
-                fontWeight: "700",
-                color: "#1a2e6b",
-                marginBottom: "1.25rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-              }}
-            >
-              <span>📝</span> إنشاء حوالة جديدة
-            </h3>
-            <form onSubmit={handleSubmit}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "1rem",
-                  marginBottom: "1rem",
-                }}
-              >
-                {/* Agent */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.4rem",
-                      fontSize: "0.8rem",
-                      fontWeight: "600",
-                      color: "#374151",
-                    }}
-                  >
-                    الوكيل المستلم *
-                  </label>
-                  <select
-                    required
-                    value={formData.agentId}
-                    onChange={(e) => setFormData({ ...formData, agentId: e.target.value })}
-                    style={{
-                      width: "100%",
-                      borderRadius: "0.5rem",
-                      border: "2px solid #e5e7eb",
-                      padding: "0.6rem 0.75rem",
-                      fontSize: "0.875rem",
-                      fontFamily: "'Cairo', sans-serif",
-                      color: "#1f2937",
-                      backgroundColor: "white",
-                    }}
-                  >
-                    <option value="">اختر الوكيل</option>
-                    {agents.map((agent: any) => (
-                      <option key={agent.id} value={agent.id}>
-                        {agent.agentName} ({agent.agentCode})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Customer */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.4rem",
-                      fontSize: "0.8rem",
-                      fontWeight: "600",
-                      color: "#374151",
-                    }}
-                  >
-                    العميل المرسل *
-                  </label>
-                  <select
-                    required
-                    value={formData.customerId}
-                    onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
-                    style={{
-                      width: "100%",
-                      borderRadius: "0.5rem",
-                      border: "2px solid #e5e7eb",
-                      padding: "0.6rem 0.75rem",
-                      fontSize: "0.875rem",
-                      fontFamily: "'Cairo', sans-serif",
-                      color: "#1f2937",
-                      backgroundColor: "white",
-                    }}
-                  >
-                    <option value="">اختر العميل</option>
-                    {customers.map((customer: any) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.customerName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Amount */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.4rem",
-                      fontSize: "0.8rem",
-                      fontWeight: "600",
-                      color: "#374151",
-                    }}
-                  >
-                    المبلغ *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    placeholder="أدخل المبلغ"
-                    style={{
-                      width: "100%",
-                      borderRadius: "0.5rem",
-                      border: "2px solid #e5e7eb",
-                      padding: "0.6rem 0.75rem",
-                      fontSize: "0.875rem",
-                      fontFamily: "'Cairo', sans-serif",
-                      color: "#1f2937",
-                    }}
-                  />
-                </div>
-
-                {/* Currency */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.4rem",
-                      fontSize: "0.8rem",
-                      fontWeight: "600",
-                      color: "#374151",
-                    }}
-                  >
-                    العملة *
-                  </label>
-                  <select
-                    value={formData.currencyCode}
-                    onChange={(e) => setFormData({ ...formData, currencyCode: e.target.value })}
-                    style={{
-                      width: "100%",
-                      borderRadius: "0.5rem",
-                      border: "2px solid #e5e7eb",
-                      padding: "0.6rem 0.75rem",
-                      fontSize: "0.875rem",
-                      fontFamily: "'Cairo', sans-serif",
-                      color: "#1f2937",
-                      backgroundColor: "white",
-                    }}
-                  >
-                    {CURRENCIES.map((curr) => (
-                      <option key={curr} value={curr}>
-                        {curr} - {CURRENCY_NAMES[curr]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Notes */}
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.4rem",
-                      fontSize: "0.8rem",
-                      fontWeight: "600",
-                      color: "#374151",
-                    }}
-                  >
-                    الملاحظات
-                  </label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="أدخل ملاحظاتك (اختياري)"
-                    rows={2}
-                    style={{
-                      width: "100%",
-                      borderRadius: "0.5rem",
-                      border: "2px solid #e5e7eb",
-                      padding: "0.6rem 0.75rem",
-                      fontSize: "0.875rem",
-                      fontFamily: "'Cairo', sans-serif",
-                      color: "#1f2937",
-                      resize: "vertical",
-                    }}
-                  />
-                </div>
+        {/* Results Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              الإيصالات {searchResult?.total ? `(${searchResult.total.toLocaleString("ar-SA")})` : ""}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="p-4 space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
               </div>
-
-              {/* Preview */}
-              {formData.agentId && formData.amount && (
-                <div
-                  style={{
-                    backgroundColor: "#eff6ff",
-                    borderRadius: "0.75rem",
-                    padding: "1rem",
-                    marginBottom: "1rem",
-                    border: "1px solid #bfdbfe",
-                    fontSize: "0.85rem",
-                    color: "#1e40af",
-                  }}
-                >
-                  <strong>معاينة:</strong> إرسال {formData.amount} {formData.currencyCode} إلى{" "}
-                  {selectedAgent?.agentName || "الوكيل"} من{" "}
-                  {selectedCustomer?.customerName || "العميل"}
-                </div>
-              )}
-
-              <div style={{ display: "flex", gap: "0.75rem" }}>
-                <button
-                  type="submit"
-                  disabled={createTransferMutation.isPending}
-                  style={{
-                    flex: 1,
-                    background: "linear-gradient(135deg, #1a2e6b, #2563eb)",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "0.75rem",
-                    padding: "0.75rem",
-                    fontSize: "0.9rem",
-                    fontWeight: "700",
-                    fontFamily: "'Cairo', sans-serif",
-                    cursor: createTransferMutation.isPending ? "not-allowed" : "pointer",
-                    opacity: createTransferMutation.isPending ? 0.7 : 1,
-                  }}
-                >
-                  {createTransferMutation.isPending ? "⏳ جاري الإنشاء..." : "✅ إنشاء الحوالة"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateForm(false)}
-                  style={{
-                    padding: "0.75rem 1.5rem",
-                    backgroundColor: "#f1f5f9",
-                    color: "#374151",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "0.75rem",
-                    fontSize: "0.9rem",
-                    fontFamily: "'Cairo', sans-serif",
-                    cursor: "pointer",
-                  }}
-                >
-                  إلغاء
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Transfers List */}
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: "1rem",
-            padding: "1.5rem",
-            boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: "1rem",
-              paddingBottom: "1rem",
-              borderBottom: "2px solid #f1f5f9",
-            }}
-          >
-            <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#1a2e6b" }}>
-              📋 قائمة الحوالات
-            </h3>
-            <span
-              style={{
-                fontSize: "0.75rem",
-                color: "#6b7280",
-                backgroundColor: "#f1f5f9",
-                padding: "0.2rem 0.6rem",
-                borderRadius: "9999px",
-              }}
-            >
-              {transfers.length} حوالة
-            </span>
-          </div>
-
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ backgroundColor: "#f8fafc" }}>
-                  {["رقم الإشعار", "المبلغ", "العملة", "الحالة", "التاريخ", "إجراء"].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: "0.75rem 1rem",
-                        textAlign: "right",
-                        fontSize: "0.8rem",
-                        fontWeight: "700",
-                        color: "#374151",
-                        borderBottom: "2px solid #e5e7eb",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "#9ca3af" }}>
-                      ⏳ جاري التحميل...
-                    </td>
-                  </tr>
-                ) : transfers.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "#9ca3af" }}>
-                      لا توجد حوالات حالياً
-                    </td>
-                  </tr>
-                ) : (
-                  transfers.map((transfer: any) => (
-                    <tr
-                      key={transfer.id}
-                      style={{ borderBottom: "1px solid #f1f5f9" }}
-                    >
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          fontFamily: "monospace",
-                          fontSize: "0.85rem",
-                          fontWeight: "600",
-                          color: "#1a2e6b",
-                        }}
-                      >
-                        {transfer.notificationNumber}
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem", fontWeight: "700", color: "#065f46" }}>
-                        {parseFloat(transfer.amount).toLocaleString("ar-SA")}
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem", color: "#374151" }}>
-                        {transfer.currencyCode}
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            borderRadius: "9999px",
-                            padding: "0.2rem 0.6rem",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            backgroundColor:
-                              transfer.status === "pending" ? "#fef3c7" : "#d1fae5",
-                            color:
-                              transfer.status === "pending" ? "#92400e" : "#065f46",
-                          }}
-                        >
-                          {transfer.status === "pending" ? "⏳ قيد الانتظار" : "✅ تم الصرف"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem", fontSize: "0.8rem", color: "#6b7280" }}>
-                        {new Date(transfer.createdAt).toLocaleDateString("ar-SA")}
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>
-                        <button
-                          onClick={() => {
-                            setCreatedTransfer({
-                              ...transfer,
-                              notificationNumber: transfer.notificationNumber,
-                            });
-                            setShowReceipt(true);
-                          }}
-                          style={{
-                            background: "#eff6ff",
-                            color: "#1a2e6b",
-                            border: "1px solid #bfdbfe",
-                            borderRadius: "0.4rem",
-                            padding: "0.3rem 0.75rem",
-                            fontSize: "0.75rem",
-                            fontFamily: "'Cairo', sans-serif",
-                            fontWeight: "600",
-                            cursor: "pointer",
-                          }}
-                        >
-                          🧾 إيصال
-                        </button>
-                      </td>
+            ) : searchResult?.rows.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">رقم الإشعار</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">اسم الدافع</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">المكتب</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">المبلغ</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">الحالة</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">التاريخ</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">إجراءات</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </thead>
+                  <tbody>
+                    {searchResult.rows.map((r: any) => (
+                      <tr key={r.id} className="border-b hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-mono font-bold text-blue-800">{r.notificationNumber}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium">{r.payerName}</div>
+                          {r.payerPhone && <div className="text-xs text-slate-400">{r.payerPhone}</div>}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{r.officeName}</td>
+                        <td className="px-4 py-3 font-bold">{r.amount} {r.currencyCode}</td>
+                        <td className="px-4 py-3">
+                          <Badge variant={statusVariants[r.status] ?? "outline"}>
+                            {statusLabels[r.status] ?? r.status}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">
+                          {new Date(r.createdAt).toLocaleDateString("ar-SA")}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => setSelectedReceipt(r)}>
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            {r.status === "pending_deposit" && (
+                              <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700"
+                                onClick={() => setShowCancel(r.id)}>
+                                <XCircle className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-slate-400">
+                <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">لا توجد إيصالات</p>
+                <Button className="mt-4 bg-blue-700 hover:bg-blue-800" onClick={() => setShowCreate(true)}>
+                  <Plus className="w-4 h-4 ml-1" />
+                  إنشاء أول إيصال
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
 
-      {/* Receipt Modal */}
-      {showReceipt && createdTransfer && (
-        <TransferReceipt
-          transfer={{
-            notificationNumber: createdTransfer.notificationNumber,
-            secretCode: createdTransfer.secretCode,
-            transferId: createdTransfer.transferId,
-            amount: createdTransfer.amount || "0",
-            currencyCode: createdTransfer.currencyCode || "USD",
-            status: createdTransfer.status || "pending",
-            notes: createdTransfer.notes,
-            createdAt: createdTransfer.createdAt || new Date(),
-            agentName: selectedAgent?.agentName,
-          }}
-          onClose={() => setShowReceipt(false)}
-        />
+      {/* Create Dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-lg" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <img src={LOGO_URL} alt="" className="h-8 w-auto" />
+              إنشاء إيصال جديد
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <Label>اسم الدافع *</Label>
+                <Input value={form.payerName} onChange={(e) => setForm({ ...form, payerName: e.target.value })}
+                  placeholder="الاسم الكامل للدافع" />
+              </div>
+              <div>
+                <Label>رقم الهاتف</Label>
+                <Input value={form.payerPhone} onChange={(e) => setForm({ ...form, payerPhone: e.target.value })}
+                  placeholder="+249..." dir="ltr" />
+              </div>
+              <div>
+                <Label>الدولة</Label>
+                <Input value={form.payerCountry} onChange={(e) => setForm({ ...form, payerCountry: e.target.value })}
+                  placeholder="السودان" />
+              </div>
+              <div>
+                <Label>المبلغ *</Label>
+                <Input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  placeholder="0.00" type="number" min="0" step="0.01" dir="ltr" />
+              </div>
+              <div>
+                <Label>العملة *</Label>
+                <Select value={form.currencyCode} onValueChange={(v) => setForm({ ...form, currencyCode: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label>المكتب / الوكيل المستلم *</Label>
+                <Select value={form.officeId} onValueChange={(v) => setForm({ ...form, officeId: v })}>
+                  <SelectTrigger><SelectValue placeholder="اختر المكتب..." /></SelectTrigger>
+                  <SelectContent>
+                    {offices.map((o: any) => (
+                      <SelectItem key={o.id} value={String(o.id)}>
+                        {o.name} {o.city ? `— ${o.city}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>مدة الصلاحية (أيام)</Label>
+                <Input value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: e.target.value })}
+                  type="number" min="1" max="365" dir="ltr" />
+              </div>
+              <div className="col-span-2">
+                <Label>ملاحظات</Label>
+                <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="ملاحظات إضافية..." rows={2} />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2 border-t">
+              <Button variant="outline" onClick={() => setShowCreate(false)}>إلغاء</Button>
+              <Button onClick={handleCreate} disabled={createMutation.isPending} className="bg-blue-700 hover:bg-blue-800">
+                {createMutation.isPending ? "جاري الإنشاء..." : "إنشاء الإيصال"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Receipt Detail Dialog */}
+      {selectedReceipt && (
+        <Dialog open={!!selectedReceipt} onOpenChange={() => setSelectedReceipt(null)}>
+          <DialogContent className="max-w-md" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <img src={LOGO_URL} alt="" className="h-8 w-auto" />
+                تفاصيل الإيصال
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* QR Code */}
+              <div className="flex justify-center">
+                <div className="border-2 border-blue-200 rounded-xl p-3 bg-white text-center">
+                  <QRCodeSVG
+                    value={`${window.location.origin}/verify/${selectedReceipt.notificationNumber}`}
+                    size={160}
+                    level="M"
+                  />
+                  <p className="text-xs text-slate-500 mt-2">امسح للتحقق من الإيصال</p>
+                </div>
+              </div>
+
+              {/* Info */}
+              <div className="bg-blue-50 rounded-xl p-4 space-y-2 border border-blue-100">
+                <InfoRow label="رقم الإشعار" value={selectedReceipt.notificationNumber} mono highlight />
+                <InfoRow label="كود التحقق" value={selectedReceipt.verificationCode} mono highlight />
+                {selectedReceipt.secretPin && <InfoRow label="الرقم السري" value={selectedReceipt.secretPin} mono />}
+                <InfoRow label="اسم الدافع" value={selectedReceipt.payerName} />
+                {selectedReceipt.payerPhone && <InfoRow label="الهاتف" value={selectedReceipt.payerPhone} />}
+                {selectedReceipt.payerCountry && <InfoRow label="الدولة" value={selectedReceipt.payerCountry} />}
+                <InfoRow label="المبلغ" value={`${selectedReceipt.amount} ${selectedReceipt.currencyCode}`} />
+                <InfoRow label="الحالة" value={statusLabels[selectedReceipt.status] ?? selectedReceipt.status} />
+                <InfoRow label="تاريخ الإنشاء" value={new Date(selectedReceipt.createdAt).toLocaleDateString("ar-SA")} />
+              </div>
+
+              {/* Warning */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 flex gap-2">
+                <span>⚠️</span>
+                <span>احتفظ بالرقم السري وأرسله للمكتب بشكل آمن. لن يُعرض مرة أخرى في هذه الواجهة.</span>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                {selectedReceipt.status === "pending_deposit" && (
+                  <Button variant="destructive" size="sm"
+                    onClick={() => { setShowCancel(selectedReceipt.id); setSelectedReceipt(null); }}>
+                    <XCircle className="w-4 h-4 ml-1" />
+                    إلغاء الإيصال
+                  </Button>
+                )}
+                <Button variant="outline" size="sm"
+                  onClick={() => setShowReceiptPrint(selectedReceipt)}>
+                  🖨️ طباعة الإيصال
+                </Button>
+                <Button variant="outline" onClick={() => setSelectedReceipt(null)}>إغلاق</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
+
+      {/* Print Receipt Dialog */}
+      {showReceiptPrint && (
+        <Dialog open={!!showReceiptPrint} onOpenChange={() => setShowReceiptPrint(null)}>
+          <DialogContent className="max-w-2xl" dir="rtl">
+            <TransferReceipt
+              transfer={{
+                notificationNumber: showReceiptPrint.notificationNumber,
+                secretCode: showReceiptPrint.verificationCode,
+                amount: showReceiptPrint.amount,
+                currencyCode: showReceiptPrint.currencyCode,
+                status: showReceiptPrint.status,
+                notes: showReceiptPrint.notes,
+                createdAt: showReceiptPrint.createdAt,
+                senderName: showReceiptPrint.payerName,
+                agentName: showReceiptPrint.officeName,
+              }}
+              onClose={() => setShowReceiptPrint(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Cancel Dialog */}
+      <Dialog open={!!showCancel} onOpenChange={() => setShowCancel(null)}>
+        <DialogContent dir="rtl">
+          <DialogHeader>
+            <DialogTitle>إلغاء الإيصال</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              هل أنت متأكد من إلغاء هذا الإيصال؟ لا يمكن التراجع عن هذا الإجراء.
+            </p>
+            <div>
+              <Label>سبب الإلغاء</Label>
+              <Textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="اذكر سبب الإلغاء..." rows={2} />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowCancel(null)}>تراجع</Button>
+              <Button variant="destructive" disabled={cancelMutation.isPending}
+                onClick={() => showCancel && cancelMutation.mutate({
+                  receiptId: showCancel,
+                  cancelReason: cancelReason || undefined,
+                })}>
+                {cancelMutation.isPending ? "جاري الإلغاء..." : "تأكيد الإلغاء"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function InfoRow({ label, value, mono, highlight }: { label: string; value: string; mono?: boolean; highlight?: boolean }) {
+  return (
+    <div className="flex justify-between items-center py-0.5">
+      <span className="text-sm text-slate-600">{label}</span>
+      <span className={`text-sm font-semibold ${mono ? "font-mono tracking-wider" : ""} ${highlight ? "text-blue-800" : ""}`}>
+        {value}
+      </span>
     </div>
   );
 }

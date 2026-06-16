@@ -1,271 +1,203 @@
 import {
-  int,
-  mysqlEnum,
   mysqlTable,
-  text,
-  timestamp,
   varchar,
+  text,
+  int,
+  bigint,
   decimal,
   boolean,
-  json,
+  mysqlEnum,
   index,
+  uniqueIndex,
+  timestamp,
 } from "drizzle-orm/mysql-core";
+import { sql } from "drizzle-orm";
 
-/**
- * نظام التحويلات المالية - متجر السودان
- * Multi-Currency Wallet System with Double Entry Accounting
- */
-
-// ============ USERS & AUTHENTICATION ============
-
-export const users = mysqlTable(
-  "users",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    openId: varchar("openId", { length: 64 }).notNull().unique(),
-    name: text("name"),
-    email: varchar("email", { length: 320 }),
-    phone: varchar("phone", { length: 20 }),
-    loginMethod: varchar("loginMethod", { length: 64 }),
-    role: mysqlEnum("role", ["admin", "agent"]).default("agent").notNull(),
-    isActive: boolean("isActive").default(true).notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-    lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-  },
-  (table) => ({
-    roleIdx: index("role_idx").on(table.role),
-    activeIdx: index("active_idx").on(table.isActive),
-  })
-);
-
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
-
-// ============ AGENTS (الوكلاء) ============
-
-export const agents = mysqlTable(
-  "agents",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    userId: int("userId").notNull(),
-    agentName: varchar("agentName", { length: 255 }).notNull(),
-    agentCode: varchar("agentCode", { length: 50 }).notNull().unique(),
-    phone: varchar("phone", { length: 20 }),
-    email: varchar("email", { length: 320 }),
-    address: text("address"),
-    city: varchar("city", { length: 100 }),
-    country: varchar("country", { length: 100 }),
-    isActive: boolean("isActive").default(true).notNull(),
-    notes: text("notes"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    userIdIdx: index("agent_userId_idx").on(table.userId),
-    codeIdx: index("agent_code_idx").on(table.agentCode),
-    activeIdx: index("agent_active_idx").on(table.isActive),
-  })
-);
-
-export type Agent = typeof agents.$inferSelect;
-export type InsertAgent = typeof agents.$inferInsert;
-
-// ============ CUSTOMERS (العملاء) ============
-
-export const customers = mysqlTable(
-  "customers",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    customerId: varchar("customerId", { length: 50 }).notNull().unique(),
-    customerName: varchar("customerName", { length: 255 }).notNull(),
-    phone: varchar("phone", { length: 20 }),
-    email: varchar("email", { length: 320 }),
-    address: text("address"),
-    city: varchar("city", { length: 100 }),
-    country: varchar("country", { length: 100 }),
-    isActive: boolean("isActive").default(true).notNull(),
-    notes: text("notes"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    customerIdIdx: index("customer_id_idx").on(table.customerId),
-    activeIdx: index("customer_active_idx").on(table.isActive),
-  })
-);
-
-export type Customer = typeof customers.$inferSelect;
-export type InsertCustomer = typeof customers.$inferInsert;
-
-// ============ CURRENCIES ============
-
-export const currencies = mysqlTable("currencies", {
-  id: int("id").autoincrement().primaryKey(),
-  code: varchar("code", { length: 10 }).notNull().unique(),
-  name: varchar("name", { length: 100 }).notNull(),
-  symbol: varchar("symbol", { length: 10 }).notNull(),
-  isActive: boolean("isActive").default(true).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+// ─── Users (Manus Auth) ───────────────────────────────────────────────────────
+export const users = mysqlTable("users", {
+  id: varchar("id", { length: 128 }).primaryKey(),
+  openId: varchar("open_id", { length: 128 }).notNull().unique(),
+  name: varchar("name", { length: 255 }),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 64 }),
+  avatar: text("avatar"),
+  loginMethod: varchar("login_method", { length: 64 }),
+  role: mysqlEnum("role", ["admin", "staff", "agent"]).notNull().default("staff"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastSignedIn: timestamp("last_signed_in"),
+  createdAt: timestamp("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
-export type Currency = typeof currencies.$inferSelect;
-export type InsertCurrency = typeof currencies.$inferInsert;
+// ─── Offices / Agents ────────────────────────────────────────────────────────
+export const offices = mysqlTable("offices", {
+  id: int("id").primaryKey().autoincrement(),
+  code: varchar("code", { length: 32 }).notNull().unique(),       // e.g. OFF-001
+  name: varchar("name", { length: 255 }).notNull(),
+  city: varchar("city", { length: 128 }),
+  country: varchar("country", { length: 128 }),
+  phone: varchar("phone", { length: 64 }),
+  managerName: varchar("manager_name", { length: 255 }),
+  userId: varchar("user_id", { length: 128 }),                    // linked system user
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+}, (t) => ({
+  codeIdx: uniqueIndex("offices_code_idx").on(t.code),
+  userIdx: index("offices_user_idx").on(t.userId),
+}));
 
-// ============ WALLETS (المحافظ) ============
+// ─── Office Balances ─────────────────────────────────────────────────────────
+export const officeBalances = mysqlTable("office_balances", {
+  id: int("id").primaryKey().autoincrement(),
+  officeId: int("office_id").notNull(),
+  currencyCode: varchar("currency_code", { length: 10 }).notNull().default("USD"),
+  balance: decimal("balance", { precision: 18, scale: 4 }).notNull().default("0"),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+}, (t) => ({
+  officeIdx: index("ob_office_idx").on(t.officeId),
+  uniqueOfficeCurrency: uniqueIndex("ob_office_currency_idx").on(t.officeId, t.currencyCode),
+}));
 
-export const agentWallets = mysqlTable(
-  "agent_wallets",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    agentId: int("agentId").notNull(),
-    currencyCode: varchar("currencyCode", { length: 10 }).notNull(),
-    balance: decimal("balance", { precision: 18, scale: 8 }).default("0").notNull(),
-    frozenBalance: decimal("frozenBalance", { precision: 18, scale: 8 }).default("0").notNull(),
-    totalReceived: decimal("totalReceived", { precision: 18, scale: 8 }).default("0").notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    agentCurrencyIdx: index("agent_wallet_idx").on(table.agentId, table.currencyCode),
-  })
-);
+// ─── Receipts ─────────────────────────────────────────────────────────────────
+// Status flow: draft → pending_deposit → received | cancelled | expired
+export const receipts = mysqlTable("receipts", {
+  id: int("id").primaryKey().autoincrement(),
 
-export type AgentWallet = typeof agentWallets.$inferSelect;
-export type InsertAgentWallet = typeof agentWallets.$inferInsert;
+  // Unique identifiers
+  notificationNumber: varchar("notification_number", { length: 32 }).notNull().unique(),
+  verificationCode: varchar("verification_code", { length: 16 }).notNull(),  // short code for customer
+  secretPin: varchar("secret_pin", { length: 8 }).notNull(),                  // internal PIN
 
-export const companyWallet = mysqlTable(
-  "company_wallet",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    currencyCode: varchar("currencyCode", { length: 10 }).notNull().unique(),
-    balance: decimal("balance", { precision: 18, scale: 8 }).default("0").notNull(),
-    totalTransferred: decimal("totalTransferred", { precision: 18, scale: 8 }).default("0").notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  }
-);
+  // Payer info (no customer account required)
+  payerName: varchar("payer_name", { length: 255 }).notNull(),
+  payerPhone: varchar("payer_phone", { length: 64 }),
+  payerCountry: varchar("payer_country", { length: 128 }),
 
-export type CompanyWallet = typeof companyWallet.$inferSelect;
-export type InsertCompanyWallet = typeof companyWallet.$inferInsert;
+  // Financial
+  amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
+  currencyCode: varchar("currency_code", { length: 10 }).notNull().default("USD"),
 
-// ============ TRANSFERS (الحوالات) ============
+  // Assignment
+  officeId: int("office_id").notNull(),
 
-export const transfers = mysqlTable(
-  "transfers",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    transferId: varchar("transferId", { length: 50 }).notNull().unique(),
-    notificationNumber: varchar("notificationNumber", { length: 50 }).notNull().unique(),
-    secretCode: varchar("secretCode", { length: 50 }).notNull(),
-    agentId: int("agentId").notNull(),
-    customerId: int("customerId").notNull(),
-    amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
-    currencyCode: varchar("currencyCode", { length: 10 }).notNull(),
-    status: mysqlEnum("status", ["pending", "confirmed", "disbursed", "cancelled"]).default("pending").notNull(),
-    qrCode: text("qrCode"),
-    notes: text("notes"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    confirmedAt: timestamp("confirmedAt"),
-    cancelledAt: timestamp("cancelledAt"),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    agentIdIdx: index("transfer_agent_idx").on(table.agentId),
-    customerIdIdx: index("transfer_customer_idx").on(table.customerId),
-    statusIdx: index("transfer_status_idx").on(table.status),
-    notificationIdx: index("transfer_notification_idx").on(table.notificationNumber),
-    transferIdIdx: index("transfer_id_idx").on(table.transferId),
-  })
-);
+  // Status
+  status: mysqlEnum("status", [
+    "draft",
+    "pending_deposit",
+    "received",
+    "cancelled",
+    "expired",
+  ]).notNull().default("pending_deposit"),
 
-export type Transfer = typeof transfers.$inferSelect;
-export type InsertTransfer = typeof transfers.$inferInsert;
+  // Validity
+  validityDays: int("validity_days").notNull().default(7),
+  expiresAt: bigint("expires_at", { mode: "number" }),
 
-// ============ LEDGER ENTRIES (دفتر الأستاذ) ============
+  // Notes
+  notes: text("notes"),
 
-export const ledgerEntries = mysqlTable(
-  "ledger_entries",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    transferId: int("transferId").notNull(),
-    entryType: mysqlEnum("entryType", ["debit", "credit"]).notNull(),
-    accountType: mysqlEnum("accountType", ["agent", "company"]).notNull(),
-    accountId: int("accountId").notNull(),
-    amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
-    currencyCode: varchar("currencyCode", { length: 10 }).notNull(),
-    description: text("description"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-  },
-  (table) => ({
-    transferIdIdx: index("ledger_transfer_idx").on(table.transferId),
-    accountIdx: index("ledger_account_idx").on(table.accountType, table.accountId),
-  })
-);
+  // Created by
+  createdByUserId: varchar("created_by_user_id", { length: 128 }).notNull(),
 
-export type LedgerEntry = typeof ledgerEntries.$inferSelect;
-export type InsertLedgerEntry = typeof ledgerEntries.$inferInsert;
+  // Received by
+  receivedByUserId: varchar("received_by_user_id", { length: 128 }),
+  receivedAt: bigint("received_at", { mode: "number" }),
+  receivedNotes: text("received_notes"),
 
-// ============ AUDIT LOG (سجل التدقيق) ============
+  // Cancelled by
+  cancelledByUserId: varchar("cancelled_by_user_id", { length: 128 }),
+  cancelledAt: bigint("cancelled_at", { mode: "number" }),
+  cancelReason: text("cancel_reason"),
 
-export const auditLog = mysqlTable(
-  "audit_log",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    userId: int("userId").notNull(),
-    action: varchar("action", { length: 100 }).notNull(),
-    entityType: varchar("entityType", { length: 50 }).notNull(),
-    entityId: int("entityId"),
-    details: json("details"),
-    ipAddress: varchar("ipAddress", { length: 50 }),
-    userAgent: text("userAgent"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-  },
-  (table) => ({
-    userIdIdx: index("audit_user_idx").on(table.userId),
-    actionIdx: index("audit_action_idx").on(table.action),
-    entityIdx: index("audit_entity_idx").on(table.entityType, table.entityId),
-    createdAtIdx: index("audit_created_idx").on(table.createdAt),
-  })
-);
+  // Timestamps
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+}, (t) => ({
+  notifIdx: uniqueIndex("receipts_notif_idx").on(t.notificationNumber),
+  verifyIdx: index("receipts_verify_idx").on(t.verificationCode),
+  officeIdx: index("receipts_office_idx").on(t.officeId),
+  statusIdx: index("receipts_status_idx").on(t.status),
+  payerNameIdx: index("receipts_payer_name_idx").on(t.payerName),
+  payerPhoneIdx: index("receipts_payer_phone_idx").on(t.payerPhone),
+  createdAtIdx: index("receipts_created_at_idx").on(t.createdAt),
+  expiresIdx: index("receipts_expires_idx").on(t.expiresAt),
+}));
 
-export type AuditLog = typeof auditLog.$inferSelect;
-export type InsertAuditLog = typeof auditLog.$inferInsert;
+// ─── Receipt Attachments ──────────────────────────────────────────────────────
+export const receiptAttachments = mysqlTable("receipt_attachments", {
+  id: int("id").primaryKey().autoincrement(),
+  receiptId: int("receipt_id").notNull(),
+  uploadedByUserId: varchar("uploaded_by_user_id", { length: 128 }).notNull(),
+  fileKey: varchar("file_key", { length: 512 }).notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileName: varchar("file_name", { length: 255 }),
+  mimeType: varchar("mime_type", { length: 128 }),
+  fileSize: int("file_size"),
+  description: text("description"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+}, (t) => ({
+  receiptIdx: index("ra_receipt_idx").on(t.receiptId),
+}));
 
-// ============ TRANSFER CONFIRMATIONS (تأكيدات الصرف) ============
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+export const auditLog = mysqlTable("audit_log", {
+  id: int("id").primaryKey().autoincrement(),
+  entityType: varchar("entity_type", { length: 64 }).notNull(),   // 'receipt' | 'office' | 'user'
+  entityId: varchar("entity_id", { length: 128 }).notNull(),
+  action: varchar("action", { length: 64 }).notNull(),            // 'create' | 'status_change' | 'cancel' | 'receive' | 'attach' | etc.
+  actorUserId: varchar("actor_user_id", { length: 128 }),
+  actorName: varchar("actor_name", { length: 255 }),
+  actorRole: varchar("actor_role", { length: 32 }),
+  previousValue: text("previous_value"),                          // JSON snapshot
+  newValue: text("new_value"),                                    // JSON snapshot
+  ipAddress: varchar("ip_address", { length: 64 }),
+  userAgent: text("user_agent"),
+  notes: text("notes"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+}, (t) => ({
+  entityIdx: index("al_entity_idx").on(t.entityType, t.entityId),
+  actorIdx: index("al_actor_idx").on(t.actorUserId),
+  actionIdx: index("al_action_idx").on(t.action),
+  createdAtIdx: index("al_created_at_idx").on(t.createdAt),
+}));
 
-export const transferConfirmations = mysqlTable(
-  "transfer_confirmations",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    transferId: int("transferId").notNull().unique(),
-    agentId: int("agentId").notNull(),
-    confirmedByUserId: int("confirmedByUserId").notNull(),
-    confirmationTime: timestamp("confirmationTime").defaultNow().notNull(),
-    ipAddress: varchar("ipAddress", { length: 50 }),
-    userAgent: text("userAgent"),
-    notes: text("notes"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-  },
-  (table) => ({
-    transferIdIdx: index("confirmation_transfer_idx").on(table.transferId),
-    agentIdIdx: index("confirmation_agent_idx").on(table.agentId),
-  })
-);
+// ─── Accounting Entries ───────────────────────────────────────────────────────
+export const accountingEntries = mysqlTable("accounting_entries", {
+  id: int("id").primaryKey().autoincrement(),
+  receiptId: int("receipt_id").notNull(),
+  officeId: int("office_id").notNull(),
+  entryType: mysqlEnum("entry_type", ["deposit_received"]).notNull(),
+  amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
+  currencyCode: varchar("currency_code", { length: 10 }).notNull(),
+  balanceBefore: decimal("balance_before", { precision: 18, scale: 4 }).notNull(),
+  balanceAfter: decimal("balance_after", { precision: 18, scale: 4 }).notNull(),
+  createdByUserId: varchar("created_by_user_id", { length: 128 }).notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+}, (t) => ({
+  receiptIdx: index("ae_receipt_idx").on(t.receiptId),
+  officeIdx: index("ae_office_idx").on(t.officeId),
+}));
 
-export type TransferConfirmation = typeof transferConfirmations.$inferSelect;
-export type InsertTransferConfirmation = typeof transferConfirmations.$inferInsert;
-
-// ============ SYSTEM SETTINGS ============
-
+// ─── System Settings ──────────────────────────────────────────────────────────
 export const systemSettings = mysqlTable("system_settings", {
-  id: int("id").autoincrement().primaryKey(),
+  id: int("id").primaryKey().autoincrement(),
   key: varchar("key", { length: 100 }).notNull().unique(),
   value: text("value"),
   description: text("description"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("createdAt").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp("updatedAt").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
-export type SystemSetting = typeof systemSettings.$inferSelect;
-export type InsertSystemSetting = typeof systemSettings.$inferInsert;
+// ─── Type Exports ─────────────────────────────────────────────────────────────
+export type User = typeof users.$inferSelect;
+export type InsertUser = typeof users.$inferInsert;
+export type Office = typeof offices.$inferSelect;
+export type InsertOffice = typeof offices.$inferInsert;
+export type OfficeBalance = typeof officeBalances.$inferSelect;
+export type Receipt = typeof receipts.$inferSelect;
+export type InsertReceipt = typeof receipts.$inferInsert;
+export type ReceiptAttachment = typeof receiptAttachments.$inferSelect;
+export type AuditLog = typeof auditLog.$inferSelect;
+export type AccountingEntry = typeof accountingEntries.$inferSelect;

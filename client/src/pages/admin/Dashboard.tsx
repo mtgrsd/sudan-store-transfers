@@ -1,609 +1,265 @@
+import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { useEffect } from "react";
-import { trpc } from "@/lib/trpc";
-import SudanStoreHeader from "@/components/SudanStoreHeader";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
+  PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer
 } from "recharts";
+import {
+  FileText, Clock, CheckCircle, XCircle, Building2, TrendingUp,
+  Plus, Users, ClipboardList, Search
+} from "lucide-react";
 
 const LOGO_URL = "/manus-storage/sudan-store-logo_c9d76f93.png";
 
-const ADMIN_NAV = [
-  { label: "الرئيسية", href: "/admin" },
-  { label: "الوكلاء", href: "/admin/agents" },
-  { label: "العملاء", href: "/admin/customers" },
-  { label: "الحوالات", href: "/admin/transfers" },
-  { label: "سجل التدقيق", href: "/admin/audit-log" },
-];
+const COLORS = ["#f59e0b", "#10b981", "#ef4444", "#6366f1"];
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: "$",
-  EUR: "€",
-  USDT: "₮",
-  AED: "د.إ",
-  SAR: "﷼",
-  SDG: "ج.س",
+const statusLabels: Record<string, string> = {
+  pending_deposit: "بانتظار الإيداع",
+  received: "مستلم",
+  cancelled: "ملغى",
+  expired: "منتهي الصلاحية",
+};
+
+const statusVariants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  pending_deposit: "secondary",
+  received: "default",
+  cancelled: "destructive",
+  expired: "outline",
 };
 
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const navigate = (href: string) => setLocation(href);
 
   useEffect(() => {
-    if (!user || user.role !== "admin") {
+    if (user && user.role !== "admin" && user.role !== "staff") {
       setLocation("/");
     }
   }, [user, setLocation]);
 
-  const { data: pendingTransfers = [] } = trpc.transfer.getPending.useQuery(
-    undefined,
-    { enabled: !!user && user.role === "admin" }
+  const { data: stats, isLoading: statsLoading } = trpc.dashboard.getStats.useQuery(
+    undefined, { enabled: !!user }
+  );
+  const { data: recent, isLoading: recentLoading } = trpc.dashboard.getRecentReceipts.useQuery(
+    { limit: 8 }, { enabled: !!user }
   );
 
-  const { data: agents = [] } = trpc.agent.getAll.useQuery(undefined, {
-    enabled: !!user && user.role === "admin",
-  });
+  if (!user) return null;
 
-  const { data: stats } = trpc.transfer.getStats.useQuery(undefined, {
-    enabled: !!user && user.role === "admin",
-  });
-
-  const { data: companyWallets = [] } = trpc.wallet.getCompanyWallets.useQuery(undefined, {
-    enabled: !!user && user.role === "admin",
-  });
-
-  const { data: chartData } = trpc.transfer.getChartData.useQuery(undefined, {
-    enabled: !!user && user.role === "admin",
-  });
-
-  if (!user || user.role !== "admin") return null;
-
-  const completedTransfers = stats?.disbursed ?? 0;
-  const totalTransfers = stats?.total ?? pendingTransfers.length;
+  const pieData = stats ? [
+    { name: "بانتظار الإيداع", value: stats.pendingReceipts },
+    { name: "مستلم", value: stats.receivedReceipts },
+    { name: "ملغى", value: stats.cancelledReceipts },
+  ].filter((d) => d.value > 0) : [];
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f1f5f9", fontFamily: "'Cairo', sans-serif" }}>
-      <SudanStoreHeader navItems={ADMIN_NAV} currentPath="/admin" />
+    <div className="min-h-screen bg-slate-50" dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }}>
+      {/* Header */}
+      <header className="bg-gradient-to-l from-blue-900 to-blue-700 text-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img src={LOGO_URL} alt="متجر السودان" className="h-10 w-auto" />
+            <div>
+              <h1 className="text-lg font-bold">متجر السودان</h1>
+              <p className="text-xs text-blue-200">نظام إدارة الإيصالات</p>
+            </div>
+          </div>
+          <nav className="hidden md:flex items-center gap-1">
+            {[
+              { label: "الرئيسية", href: "/admin" },
+              { label: "الإيصالات", href: "/admin/receipts" },
+              { label: "المكاتب", href: "/admin/offices" },
+              { label: "سجل التدقيق", href: "/admin/audit-log" },
+            ].map((item) => (
+              <button
+                key={item.href}
+                onClick={() => setLocation(item.href)}
+                className="px-3 py-1.5 text-sm rounded-md hover:bg-white/20 transition-colors"
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-blue-200">{user.name}</span>
+            <Badge variant="outline" className="text-xs border-blue-300 text-blue-100">
+              {user.role === "admin" ? "مدير" : "موظف"}
+            </Badge>
+          </div>
+        </div>
+      </header>
 
-      <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "1.5rem 1rem" }}>
-        {/* Welcome Banner */}
-        <div
-          style={{
-            background: "linear-gradient(135deg, #1a2e6b 0%, #2563eb 50%, #1a2e6b 100%)",
-            borderRadius: "1rem",
-            padding: "1.5rem 2rem",
-            marginBottom: "1.5rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "1rem",
-            boxShadow: "0 4px 20px rgba(26,46,107,0.3)",
-          }}
-        >
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        {/* Welcome */}
+        <div className="flex items-center justify-between">
           <div>
-            <h2 style={{ fontSize: "1.4rem", fontWeight: "800", color: "white", marginBottom: "0.25rem" }}>
-              مرحباً، {user.name} 👋
-            </h2>
-            <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.75)" }}>
-              لوحة تحكم نظام التحويلات المالية - متجر السودان
+            <h2 className="text-xl font-bold text-slate-800">لوحة التحكم</h2>
+            <p className="text-sm text-slate-500">
+              {new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
             </p>
           </div>
-          <img
-            src={LOGO_URL}
-            alt="متجر السودان"
-            style={{ height: "50px", width: "auto", opacity: 0.9 }}
-          />
+          <Button onClick={() => setLocation("/admin/receipts")} className="bg-blue-700 hover:bg-blue-800">
+            <Plus className="w-4 h-4 ml-1" />
+            إيصال جديد
+          </Button>
         </div>
 
-        {/* Stats Grid */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "1rem",
-            marginBottom: "1.5rem",
-          }}
-        >
-          {[
-            {
-              label: "إجمالي التحويلات",
-              value: totalTransfers,
-              icon: "💸",
-              color: "#1a2e6b",
-              bg: "#eff6ff",
-            },
-            {
-              label: "قيد الانتظار",
-              value: pendingTransfers.length,
-              icon: "⏳",
-              color: "#92400e",
-              bg: "#fffbeb",
-            },
-            {
-              label: "تم الصرف",
-              value: completedTransfers,
-              icon: "✅",
-              color: "#065f46",
-              bg: "#f0fdf4",
-            },
-            {
-              label: "عدد الوكلاء",
-              value: agents.length,
-              icon: "🏢",
-              color: "#6b21a8",
-              bg: "#faf5ff",
-            },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              style={{
-                backgroundColor: "white",
-                borderRadius: "0.75rem",
-                padding: "1.25rem",
-                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-                border: `2px solid ${stat.bg}`,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-                <span style={{ fontSize: "1.5rem" }}>{stat.icon}</span>
-                <span
-                  style={{
-                    fontSize: "0.7rem",
-                    fontWeight: "600",
-                    color: stat.color,
-                    backgroundColor: stat.bg,
-                    padding: "0.2rem 0.5rem",
-                    borderRadius: "9999px",
-                  }}
-                >
-                  {stat.label}
-                </span>
-              </div>
-              <div style={{ fontSize: "2rem", fontWeight: "800", color: stat.color }}>
-                {stat.value}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Workflow Steps */}
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: "1rem",
-            padding: "1.5rem",
-            marginBottom: "1.5rem",
-            boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-          }}
-        >
-          <h3
-            style={{
-              fontSize: "1rem",
-              fontWeight: "700",
-              color: "#1a2e6b",
-              marginBottom: "1rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
-          >
-            <span>⚙️</span> آلية عمل النظام
-          </h3>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-              gap: "0.75rem",
-            }}
-          >
-            {[
-              { step: "1", title: "إنشاء الحوالة", desc: "المدير يُنشئ الحوالة", icon: "📝", color: "#1a2e6b" },
-              { step: "2", title: "إصدار الإيصال", desc: "رقم إشعار + رمز QR", icon: "🧾", color: "#2563eb" },
-              { step: "3", title: "استلام الوكيل", desc: "يرى الحوالة في حسابه", icon: "📥", color: "#7c3aed" },
-              { step: "4", title: "التحقق", desc: "مسح QR أو رقم الإشعار", icon: "🔍", color: "#0891b2" },
-              { step: "5", title: "تأكيد الصرف", desc: "الوكيل يضغط تأكيد", icon: "✅", color: "#059669" },
-              { step: "6", title: "تحديث الرصيد", desc: "إضافة للوكيل، خصم من الشركة", icon: "💰", color: "#d97706" },
-              { step: "7", title: "منع التكرار", desc: "الحوالة مصروفة نهائياً", icon: "🔒", color: "#dc2626" },
-            ].map((item) => (
-              <div
-                key={item.step}
-                style={{
-                  backgroundColor: "#f8fafc",
-                  borderRadius: "0.5rem",
-                  padding: "0.75rem",
-                  border: `2px solid ${item.color}20`,
-                  textAlign: "center",
-                }}
-              >
-                <div
-                  style={{
-                    width: "28px",
-                    height: "28px",
-                    borderRadius: "50%",
-                    backgroundColor: item.color,
-                    color: "white",
-                    fontSize: "0.75rem",
-                    fontWeight: "700",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    margin: "0 auto 0.5rem",
-                  }}
-                >
-                  {item.step}
-                </div>
-                <div style={{ fontSize: "1.2rem", marginBottom: "0.25rem" }}>{item.icon}</div>
-                <div style={{ fontSize: "0.75rem", fontWeight: "700", color: item.color }}>
-                  {item.title}
-                </div>
-                <div style={{ fontSize: "0.65rem", color: "#6b7280", marginTop: "0.2rem" }}>
-                  {item.desc}
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {statsLoading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <Card key={i}><CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent></Card>
+            ))
+          ) : stats ? (
+            <>
+              <StatCard icon={<FileText className="w-5 h-5 text-blue-600" />} label="إجمالي الإيصالات" value={stats.totalReceipts} />
+              <StatCard icon={<TrendingUp className="w-5 h-5 text-purple-600" />} label="إيصالات اليوم" value={stats.todayReceipts} />
+              <StatCard icon={<Clock className="w-5 h-5 text-amber-500" />} label="بانتظار الإيداع" value={stats.pendingReceipts} />
+              <StatCard icon={<CheckCircle className="w-5 h-5 text-green-600" />} label="مستلمة" value={stats.receivedReceipts} />
+              <StatCard icon={<XCircle className="w-5 h-5 text-red-500" />} label="ملغاة" value={stats.cancelledReceipts} />
+              <StatCard icon={<Building2 className="w-5 h-5 text-indigo-600" />} label="مكاتب نشطة" value={stats.activeOffices} />
+            </>
+          ) : null}
         </div>
 
         {/* Quick Actions */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: "1rem",
-            marginBottom: "1.5rem",
-          }}
-        >
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: "إنشاء حوالة جديدة", href: "/admin/transfers", icon: "➕", color: "#1a2e6b" },
-            { label: "إدارة الوكلاء", href: "/admin/agents", icon: "🏢", color: "#059669" },
-            { label: "إدارة العملاء", href: "/admin/customers", icon: "👥", color: "#7c3aed" },
-            { label: "سجل التدقيق", href: "/admin/audit-log", icon: "📋", color: "#d97706" },
+            { label: "إنشاء إيصال جديد", href: "/admin/receipts", icon: <Plus className="w-5 h-5" />, color: "bg-blue-700" },
+            { label: "إدارة المكاتب", href: "/admin/offices", icon: <Building2 className="w-5 h-5" />, color: "bg-green-700" },
+            { label: "إدارة المستخدمين", href: "/admin/users", icon: <Users className="w-5 h-5" />, color: "bg-purple-700" },
+            { label: "سجل التدقيق", href: "/admin/audit-log", icon: <ClipboardList className="w-5 h-5" />, color: "bg-amber-600" },
           ].map((action) => (
             <button
               key={action.href}
-              onClick={() => navigate(action.href)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.75rem",
-                backgroundColor: "white",
-                borderRadius: "0.75rem",
-                padding: "1rem 1.25rem",
-                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-                border: `2px solid ${action.color}20`,
-                textDecoration: "none",
-                transition: "all 0.2s",
-                cursor: "pointer",
-                width: "100%",
-                textAlign: "right",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = action.color;
-                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-2px)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = `${action.color}20`;
-                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
-              }}
+              onClick={() => setLocation(action.href)}
+              className={`${action.color} text-white rounded-xl p-4 flex items-center gap-3 hover:opacity-90 transition-opacity shadow-md text-right`}
             >
-              <span style={{ fontSize: "1.5rem" }}>{action.icon}</span>
-              <span style={{ fontSize: "0.9rem", fontWeight: "700", color: action.color }}>
-                {action.label}
-              </span>
+              {action.icon}
+              <span className="text-sm font-semibold">{action.label}</span>
             </button>
           ))}
         </div>
 
-        {/* Company Wallets - Multi-Currency Balances */}
-        {companyWallets.length > 0 && (
-          <div
-            style={{
-              backgroundColor: "white",
-              borderRadius: "1rem",
-              padding: "1.5rem",
-              marginBottom: "1.5rem",
-              boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-            }}
-          >
-            <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1rem" }}>
-              🏦 أرصدة الشركة - متعددة العملات
-            </h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.75rem" }}>
-              {companyWallets.map((wallet: any) => (
-                <div
-                  key={wallet.currencyCode}
-                  style={{
-                    backgroundColor: "#f8fafc",
-                    borderRadius: "0.75rem",
-                    padding: "1rem",
-                    border: "2px solid #e2e8f0",
-                    textAlign: "center",
-                  }}
-                >
-                  <div style={{ fontSize: "1.2rem", marginBottom: "0.25rem" }}>
-                    {CURRENCY_SYMBOLS[wallet.currencyCode] || wallet.currencyCode}
-                  </div>
-                  <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: "0.25rem" }}>
-                    {wallet.currencyCode}
-                  </div>
-                  <div style={{ fontSize: "1.1rem", fontWeight: "800", color: "#1a2e6b" }}>
-                    {parseFloat(wallet.balance || "0").toLocaleString("ar-SA")}
-                  </div>
-                  {parseFloat(wallet.frozenBalance || "0") > 0 && (
-                    <div style={{ fontSize: "0.65rem", color: "#92400e", marginTop: "0.2rem" }}>
-                      مجمد: {parseFloat(wallet.frozenBalance).toLocaleString("ar-SA")}
+        {/* Charts + Recent */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Pie Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">توزيع حالات الإيصالات</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {statsLoading ? (
+                <Skeleton className="h-52 w-full" />
+              ) : pieData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" outerRadius={80} dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                      {pieData.map((_, index) => (
+                        <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-52 flex items-center justify-center text-slate-400 text-sm">
+                  لا توجد بيانات بعد
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent Receipts */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">آخر الإيصالات</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setLocation("/admin/receipts")}>
+                <Search className="w-4 h-4 ml-1" />
+                عرض الكل
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {recentLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : recent && recent.length > 0 ? (
+                <div className="space-y-2">
+                  {recent.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-slate-50 rounded px-1"
+                      onClick={() => setLocation(`/admin/receipts/${r.id}`)}>
+                      <div>
+                        <p className="text-sm font-semibold text-blue-800">{r.notificationNumber}</p>
+                        <p className="text-xs text-slate-500">{r.payerName} — {r.officeName}</p>
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold">{r.amount} {r.currencyCode}</p>
+                        <Badge variant={statusVariants[r.status] ?? "outline"} className="text-xs">
+                          {statusLabels[r.status] ?? r.status}
+                        </Badge>
+                      </div>
                     </div>
-                  )}
+                  ))}
+                </div>
+              ) : (
+                <div className="h-52 flex items-center justify-center text-slate-400 text-sm">
+                  لا توجد إيصالات بعد
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Workflow Steps */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">⚙️ آلية عمل النظام</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
+              {[
+                { step: "1", title: "إنشاء الإيصال", desc: "الإدارة تُنشئ الإيصال", icon: "📝", color: "#1a2e6b" },
+                { step: "2", title: "إصدار الإيصال", desc: "رقم إشعار + QR Code", icon: "🧾", color: "#2563eb" },
+                { step: "3", title: "استلام الزبون", desc: "يحصل على الإيصال", icon: "📄", color: "#7c3aed" },
+                { step: "4", title: "التوجه للمكتب", desc: "المكتب المحدد", icon: "🏢", color: "#0891b2" },
+                { step: "5", title: "التحقق", desc: "مسح QR أو رقم الإشعار", icon: "🔍", color: "#059669" },
+                { step: "6", title: "تأكيد الاستلام", desc: "الوكيل يضغط تأكيد", icon: "✅", color: "#d97706" },
+                { step: "7", title: "تحديث الرصيد", desc: "إضافة للمكتب فقط عند التأكيد", icon: "💰", color: "#dc2626" },
+              ].map((item) => (
+                <div key={item.step} className="text-center p-3 rounded-lg bg-slate-50 border border-slate-100">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold mx-auto mb-2"
+                    style={{ backgroundColor: item.color }}>
+                    {item.step}
+                  </div>
+                  <div className="text-lg mb-1">{item.icon}</div>
+                  <div className="text-xs font-bold" style={{ color: item.color }}>{item.title}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{item.desc}</div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* Charts Section */}
-        {chartData && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-              gap: "1rem",
-              marginBottom: "1.5rem",
-            }}
-          >
-            {/* Last 7 Days Bar Chart */}
-            <div
-              style={{
-                backgroundColor: "white",
-                borderRadius: "1rem",
-                padding: "1.5rem",
-                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-              }}
-            >
-              <h3 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1rem" }}>
-                📈 الحوالات - آخر 7 أيام
-              </h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={chartData.last7Days} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 10, fill: "#6b7280" }}
-                    tickFormatter={(v) => {
-                      const d = new Date(v);
-                      return `${d.getDate()}/${d.getMonth() + 1}`;
-                    }}
-                  />
-                  <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} allowDecimals={false} />
-                  <Tooltip
-                    formatter={(value: any) => [value, "عدد الحوالات"]}
-                    labelFormatter={(label) => {
-                      const d = new Date(label);
-                      return d.toLocaleDateString("ar-SA", { weekday: "short", month: "short", day: "numeric" });
-                    }}
-                    contentStyle={{ fontFamily: "'Cairo', sans-serif", fontSize: "0.8rem", direction: "rtl" }}
-                  />
-                  <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} name="عدد الحوالات" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Status Pie Chart */}
-            <div
-              style={{
-                backgroundColor: "white",
-                borderRadius: "1rem",
-                padding: "1.5rem",
-                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-              }}
-            >
-              <h3 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1rem" }}>
-                🥧 توزيع الحوالات حسب الحالة
-              </h3>
-              {chartData.byStatus.every((s) => s.count === 0) ? (
-                <div style={{ textAlign: "center", padding: "3rem 0", color: "#9ca3af", fontSize: "0.875rem" }}>
-                  <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📊</div>
-                  <div>لا توجد بيانات بعد</div>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie
-                      data={chartData.byStatus.filter((s) => s.count > 0)}
-                      dataKey="count"
-                      nameKey="status"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={70}
-                      label={({ status, count }) => `${status}: ${count}`}
-                      labelLine={false}
-                    >
-                      <Cell fill="#f59e0b" />
-                      <Cell fill="#10b981" />
-                    </Pie>
-                    <Legend
-                      formatter={(value) => (
-                        <span style={{ fontFamily: "'Cairo', sans-serif", fontSize: "0.8rem" }}>{value}</span>
-                      )}
-                    />
-                    <Tooltip
-                      formatter={(value: any) => [value, "عدد"]}
-                      contentStyle={{ fontFamily: "'Cairo', sans-serif", fontSize: "0.8rem", direction: "rtl" }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            {/* By Currency Bar Chart */}
-            {chartData.byCurrency.length > 0 && (
-              <div
-                style={{
-                  backgroundColor: "white",
-                  borderRadius: "1rem",
-                  padding: "1.5rem",
-                  boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-                  gridColumn: "1 / -1",
-                }}
-              >
-                <h3 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1rem" }}>
-                  💱 إجمالي الحوالات حسب العملة
-                </h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={chartData.byCurrency} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="currency" tick={{ fontSize: 12, fill: "#374151", fontFamily: "'Cairo', sans-serif" }} />
-                    <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} />
-                    <Tooltip
-                      formatter={(value: any, name: string) => [
-                        name === "count" ? `${value} حوالة` : value.toLocaleString("ar-SA"),
-                        name === "count" ? "عدد الحوالات" : "إجمالي المبلغ",
-                      ]}
-                      contentStyle={{ fontFamily: "'Cairo', sans-serif", fontSize: "0.8rem", direction: "rtl" }}
-                    />
-                    <Bar dataKey="count" fill="#1a2e6b" radius={[4, 4, 0, 0]} name="count" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Pending Transfers Table */}
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: "1rem",
-            padding: "1.5rem",
-            boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: "1rem",
-              paddingBottom: "1rem",
-              borderBottom: "2px solid #f1f5f9",
-            }}
-          >
-            <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#1a2e6b" }}>
-              ⏳ الحوالات المعلقة
-            </h3>
-            <button
-              onClick={() => navigate("/admin/transfers")}
-              style={{
-                fontSize: "0.8rem",
-                color: "#2563eb",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontWeight: "600",
-                fontFamily: "'Cairo', sans-serif",
-              }}
-            >
-              عرض الكل ←
-            </button>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ backgroundColor: "#f8fafc" }}>
-                  {["رقم الإشعار", "المبلغ", "العملة", "الحالة", "التاريخ"].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: "0.75rem 1rem",
-                        textAlign: "right",
-                        fontSize: "0.8rem",
-                        fontWeight: "700",
-                        color: "#374151",
-                        borderBottom: "2px solid #e5e7eb",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pendingTransfers.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      style={{
-                        padding: "2rem",
-                        textAlign: "center",
-                        color: "#9ca3af",
-                        fontSize: "0.875rem",
-                      }}
-                    >
-                      لا توجد حوالات معلقة حالياً
-                    </td>
-                  </tr>
-                ) : (
-                  pendingTransfers.slice(0, 5).map((transfer: any) => (
-                    <tr
-                      key={transfer.id}
-                      style={{ borderBottom: "1px solid #f1f5f9" }}
-                    >
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          fontFamily: "monospace",
-                          fontSize: "0.85rem",
-                          fontWeight: "600",
-                          color: "#1a2e6b",
-                        }}
-                      >
-                        {transfer.notificationNumber}
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem", fontWeight: "700", color: "#065f46" }}>
-                        {parseFloat(transfer.amount).toLocaleString("ar-SA")}
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem", color: "#374151" }}>
-                        {transfer.currencyCode}
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            borderRadius: "9999px",
-                            padding: "0.2rem 0.6rem",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            backgroundColor: "#fef3c7",
-                            color: "#92400e",
-                          }}
-                        >
-                          قيد الانتظار
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem", fontSize: "0.8rem", color: "#6b7280" }}>
-                        {new Date(transfer.createdAt).toLocaleDateString("ar-SA")}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </main>
     </div>
+  );
+}
+
+function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-2">{icon}</div>
+        <p className="text-2xl font-bold text-slate-800">{value.toLocaleString("ar-SA")}</p>
+        <p className="text-xs text-slate-500 mt-1">{label}</p>
+      </CardContent>
+    </Card>
   );
 }

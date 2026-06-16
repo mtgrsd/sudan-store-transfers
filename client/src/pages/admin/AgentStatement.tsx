@@ -40,14 +40,14 @@ export default function AdminAgentStatement() {
     }
   }, [user, setLocation]);
 
-  const { data: agent, isLoading: agentLoading } = trpc.agent.getById.useQuery(
-    { agentId },
-    { enabled: !!user && user.role === "admin" && agentId > 0 }
+  const { data: agent, isLoading: agentLoading } = trpc.office.getById.useQuery(
+    { id: agentId },
+    { enabled: !!user && agentId > 0 }
   );
 
-  const { data: agentTransfers = [], isLoading: transfersLoading } = trpc.agent.getAgentTransfers.useQuery(
-    { agentId },
-    { enabled: !!user && user.role === "admin" && agentId > 0 }
+  const { data: agentTransfers = [], isLoading: transfersLoading } = trpc.receipt.getByOffice.useQuery(
+    { officeId: agentId },
+    { enabled: !!user && agentId > 0 }
   );
 
   if (!user || user.role !== "admin") return null;

@@ -27,7 +27,7 @@ export default function VerifyTransfer() {
   const [searchNumber, setSearchNumber] = useState(params.notificationNumber || "");
   const [searched, setSearched] = useState(!!params.notificationNumber);
 
-  const { data: transfer, isLoading, error } = trpc.transfer.publicVerify.useQuery(
+  const { data: transfer, isLoading, error } = trpc.receipt.publicVerify.useQuery(
     { notificationNumber: searchNumber },
     { enabled: searched && !!searchNumber, retry: false }
   );
@@ -253,7 +253,7 @@ export default function VerifyTransfer() {
                     borderRadius: "1.25rem",
                     padding: "1.5rem",
                     boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-                    border: `2px solid ${transfer.status === "pending" ? "#fcd34d" : transfer.status === "disbursed" || transfer.status === "confirmed" ? "#6ee7b7" : "#fca5a5"}`,
+                    border: `2px solid ${transfer.status === "pending_deposit" ? "#fcd34d" : transfer.status === "received" ? "#6ee7b7" : "#fca5a5"}`,
                   }}
                 >
                   {/* Status Badge */}
@@ -293,10 +293,10 @@ export default function VerifyTransfer() {
                         label: "تاريخ الإنشاء",
                         value: new Date(transfer.createdAt).toLocaleString("ar-SA"),
                       },
-                      transfer.confirmedAt
+                      transfer.receivedAt
                         ? {
-                            label: "تاريخ الصرف",
-                            value: new Date(transfer.confirmedAt).toLocaleString("ar-SA"),
+                            label: "تاريخ الاستلام",
+                            value: new Date(transfer.receivedAt).toLocaleString("ar-SA"),
                           }
                         : null,
                     ]
@@ -348,11 +348,11 @@ export default function VerifyTransfer() {
                   >
                     <span>🔒</span>
                     <span>
-                      {transfer.status === "pending"
-                        ? "الحوالة صالحة وجاهزة للصرف من قِبل الوكيل المخصص"
-                        : transfer.status === "disbursed" || transfer.status === "confirmed"
-                        ? "تم صرف هذه الحوالة بنجاح ولا يمكن صرفها مرة أخرى"
-                        : "هذه الحوالة ملغاة"}
+                      {transfer.status === "pending_deposit"
+                        ? "الإيصال صالح وبانتظار الاستلام من المكتب المحدد"
+                        : transfer.status === "received"
+                        ? "تم استلام هذا الإيصال بنجاح ولا يمكن استلامه مرة أخرى"
+                        : "هذا الإيصال ملغى أو منتهي الصلاحية"}
                     </span>
                   </div>
 

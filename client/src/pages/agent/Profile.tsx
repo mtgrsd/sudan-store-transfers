@@ -36,20 +36,14 @@ export default function AgentProfile() {
     if (!user) setLocation("/");
   }, [user, setLocation]);
 
-  const { data: agentDetails } = trpc.agent.getMyProfile.useQuery(undefined, {
-    enabled: !!user,
-  });
-
-  const { data: transfers = [] } = trpc.transfer.getMyTransfers.useQuery(undefined, {
+  const { data: transfers = [] } = trpc.receipt.getMyOfficeReceipts.useQuery(undefined, {
     enabled: !!user,
   });
 
   if (!user) return null;
 
-  const wallets: any[] = (agentDetails as any)?.wallets || [];
-  const disbursedTransfers = (transfers as any[]).filter(
-    (t: any) => t.status === "disbursed" || t.status === "confirmed"
-  );
+  const wallets: any[] = [];
+  const disbursedTransfers = (transfers as any[]).filter((t: any) => t.status === "received");
 
   return (
     <div
@@ -90,10 +84,10 @@ export default function AgentProfile() {
             👤
           </div>
           <div style={{ fontSize: "1.2rem", fontWeight: "800", marginBottom: "0.25rem" }}>
-            {(agentDetails as any)?.name || user.name || "الوكيل"}
+            {user.name || "الوكيل"}
           </div>
           <div style={{ fontSize: "0.8rem", opacity: 0.8, marginBottom: "0.5rem" }}>
-            {(agentDetails as any)?.officeName || "وكيل معتمد"}
+            {"وكيل معتمد"}
           </div>
           <div
             style={{
@@ -107,7 +101,7 @@ export default function AgentProfile() {
               fontFamily: "monospace",
             }}
           >
-            🔑 {(agentDetails as any)?.agentCode || "---"}
+            🏢 وكيل معتمد
           </div>
         </div>
 
@@ -137,12 +131,12 @@ export default function AgentProfile() {
           </div>
 
           {[
-            { label: "الاسم الكامل", value: (agentDetails as any)?.name || user.name || "-" },
+            { label: "الاسم الكامل", value: user.name || "-" },
             { label: "البريد الإلكتروني", value: user.email || "-" },
-            { label: "رقم الهاتف", value: (agentDetails as any)?.phone || "-" },
-            { label: "المكتب", value: (agentDetails as any)?.officeName || "-" },
-            { label: "الدولة", value: (agentDetails as any)?.country || "-" },
-            { label: "الحالة", value: (agentDetails as any)?.isActive ? "نشط ✅" : "غير نشط ❌" },
+            { label: "رقم الهاتف", value: user.phone || "-" },
+            { label: "المكتب", value: "-" },
+            { label: "الدولة", value: "-" },
+            { label: "الحالة", value: "نشط ✅" },
           ].map((item) => (
             <div
               key={item.label}

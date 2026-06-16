@@ -1,417 +1,290 @@
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
-import { useEffect, useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import SudanStoreHeader from "@/components/SudanStoreHeader";
+import { Plus, Building2, Edit, BarChart2 } from "lucide-react";
 
-const ADMIN_NAV = [
-  { label: "الرئيسية", href: "/admin" },
-  { label: "الوكلاء", href: "/admin/agents" },
-  { label: "العملاء", href: "/admin/customers" },
-  { label: "الحوالات", href: "/admin/transfers" },
-  { label: "سجل التدقيق", href: "/admin/audit-log" },
-];
+const LOGO_URL = "/manus-storage/sudan-store-logo_c9d76f93.png";
 
-const CURRENCIES = ["USD", "EUR", "USDT", "AED", "SAR", "SDG"];
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: "$", EUR: "€", USDT: "₮", AED: "د.إ", SAR: "﷼", SDG: "ج.س",
-};
-
-export default function AdminAgents() {
+export default function AdminOffices() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<any>(null);
-  const [formData, setFormData] = useState({
-    agentName: "",
-    agentCode: "",
-    phone: "",
-    email: "",
-    branch: "",
+  const [showCreate, setShowCreate] = useState(false);
+  const [editOffice, setEditOffice] = useState<any>(null);
+  const [form, setForm] = useState({
+    name: "", code: "", city: "", country: "السودان",
+    phone: "", managerName: "", notes: "",
   });
 
-  useEffect(() => {
-    if (!user || user.role !== "admin") {
-      setLocation("/");
-    }
-  }, [user, setLocation]);
+  const utils = trpc.useUtils();
 
-  const { data: agents = [], isLoading, refetch } = trpc.agent.getAll.useQuery(
-    undefined,
-    { enabled: !!user && user.role === "admin" }
-  );
+  const { data: offices = [], isLoading } = trpc.office.getAll.useQuery({});
 
-  const createAgentMutation = trpc.agent.create.useMutation({
+  const createMutation = trpc.office.create.useMutation({
     onSuccess: () => {
-      toast.success("تم إضافة الوكيل بنجاح");
-      setFormData({ agentName: "", agentCode: "", phone: "", email: "", branch: "" });
-      setShowAddForm(false);
-      refetch();
+      toast.success("تم إنشاء المكتب بنجاح");
+      utils.office.getAll.invalidate();
+      setShowCreate(false);
+      setForm({ name: "", code: "", city: "", country: "السودان", phone: "", managerName: "", notes: "" });
     },
-    onError: (err) => toast.error(err.message || "حدث خطأ أثناء إضافة الوكيل"),
+    onError: (err: any) => toast.error(err.message),
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    createAgentMutation.mutate(formData);
+  const updateMutation = trpc.office.update.useMutation({
+    onSuccess: () => {
+      toast.success("تم تحديث المكتب");
+      utils.office.getAll.invalidate();
+      setEditOffice(null);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const handleCreate = () => {
+    if (!form.name || !form.code) {
+      toast.error("اسم المكتب والكود مطلوبان");
+      return;
+    }
+    createMutation.mutate({ ...form });
   };
 
-  if (!user || user.role !== "admin") return null;
+  const handleUpdate = () => {
+    if (!editOffice) return;
+    updateMutation.mutate({
+      id: editOffice.id,
+      name: editOffice.name,
+      city: editOffice.city,
+      country: editOffice.country,
+      phone: editOffice.phone,
+      managerName: editOffice.managerName,
+      isActive: editOffice.isActive,
+      notes: editOffice.notes,
+    });
+  };
+
+  if (!user) return null;
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f1f5f9", fontFamily: "'Cairo', sans-serif" }}>
-      <SudanStoreHeader navItems={ADMIN_NAV} currentPath="/admin/agents" />
-
-      <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "1.5rem 1rem" }}>
-        {/* Page Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "1rem" }}>
-          <div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: "800", color: "#1a2e6b", marginBottom: "0.25rem" }}>
-              🏢 إدارة الوكلاء
-            </h1>
-            <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>
-              إدارة وكلاء ومكاتب متجر السودان للتحويلات المالية
-            </p>
-          </div>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            style={{
-              background: showAddForm ? "#ef4444" : "linear-gradient(135deg, #1a2e6b 0%, #2563eb 100%)",
-              color: "white",
-              border: "none",
-              borderRadius: "0.75rem",
-              padding: "0.75rem 1.5rem",
-              fontSize: "0.875rem",
-              fontWeight: "700",
-              cursor: "pointer",
-              fontFamily: "'Cairo', sans-serif",
-              boxShadow: "0 4px 12px rgba(26,46,107,0.3)",
-            }}
-          >
-            {showAddForm ? "❌ إلغاء" : "➕ إضافة وكيل جديد"}
-          </button>
-        </div>
-
-        {/* Add Agent Form */}
-        {showAddForm && (
-          <div
-            style={{
-              backgroundColor: "white",
-              borderRadius: "1rem",
-              padding: "1.5rem",
-              marginBottom: "1.5rem",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
-              border: "2px solid #dbeafe",
-            }}
-          >
-            <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1.25rem" }}>
-              ➕ إضافة وكيل جديد
-            </h3>
-            <form onSubmit={handleSubmit}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
-                {[
-                  { label: "اسم الوكيل *", key: "agentName", type: "text", placeholder: "مثال: علاء الدين شاكر", required: true },
-                  { label: "كود الوكيل *", key: "agentCode", type: "text", placeholder: "مثال: AGT001", required: true },
-                  { label: "رقم الهاتف", key: "phone", type: "tel", placeholder: "+249123456789", required: false },
-                  { label: "البريد الإلكتروني", key: "email", type: "email", placeholder: "agent@example.com", required: false },
-                  { label: "الفرع / المكتب", key: "branch", type: "text", placeholder: "مثال: مكتب أبنا", required: false },
-                ].map((field) => (
-                  <div key={field.key}>
-                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.4rem" }}>
-                      {field.label}
-                    </label>
-                    <input
-                      type={field.type}
-                      required={field.required}
-                      value={(formData as any)[field.key]}
-                      onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
-                      placeholder={field.placeholder}
-                      style={{
-                        width: "100%",
-                        padding: "0.6rem 0.75rem",
-                        border: "2px solid #e5e7eb",
-                        borderRadius: "0.5rem",
-                        fontSize: "0.875rem",
-                        fontFamily: "'Cairo', sans-serif",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: "0.75rem" }}>
-                <button
-                  type="submit"
-                  disabled={createAgentMutation.isPending}
-                  style={{
-                    background: "linear-gradient(135deg, #1a2e6b 0%, #2563eb 100%)",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "0.5rem",
-                    padding: "0.65rem 1.5rem",
-                    fontSize: "0.875rem",
-                    fontWeight: "700",
-                    cursor: "pointer",
-                    fontFamily: "'Cairo', sans-serif",
-                    opacity: createAgentMutation.isPending ? 0.7 : 1,
-                  }}
-                >
-                  {createAgentMutation.isPending ? "⏳ جاري الحفظ..." : "✅ حفظ الوكيل"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  style={{
-                    background: "#f3f4f6",
-                    color: "#374151",
-                    border: "none",
-                    borderRadius: "0.5rem",
-                    padding: "0.65rem 1.25rem",
-                    fontSize: "0.875rem",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                    fontFamily: "'Cairo', sans-serif",
-                  }}
-                >
-                  إلغاء
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Agents Table */}
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: "1rem",
-            boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "1.25rem 1.5rem",
-              borderBottom: "2px solid #f1f5f9",
-            }}
-          >
-            <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#1a2e6b" }}>
-              📋 قائمة الوكلاء
-            </h3>
-            <span
-              style={{
-                fontSize: "0.8rem",
-                fontWeight: "600",
-                color: "#6b7280",
-                backgroundColor: "#f3f4f6",
-                padding: "0.25rem 0.75rem",
-                borderRadius: "9999px",
-              }}
-            >
-              {agents.length} وكيل
-            </span>
-          </div>
-
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ backgroundColor: "#f8fafc" }}>
-                  {["اسم الوكيل", "كود الوكيل", "الهاتف", "الفرع", "الأرصدة", "الحالة", "الإجراءات"].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: "0.75rem 1rem",
-                        textAlign: "right",
-                        fontSize: "0.8rem",
-                        fontWeight: "700",
-                        color: "#374151",
-                        borderBottom: "2px solid #e5e7eb",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={7} style={{ padding: "2rem", textAlign: "center", color: "#9ca3af" }}>
-                      ⏳ جاري التحميل...
-                    </td>
-                  </tr>
-                ) : agents.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} style={{ padding: "3rem", textAlign: "center" }}>
-                      <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🏢</div>
-                      <div style={{ fontSize: "0.9rem", color: "#6b7280", fontWeight: "600" }}>
-                        لا توجد وكلاء حالياً
-                      </div>
-                      <div style={{ fontSize: "0.8rem", color: "#9ca3af", marginTop: "0.25rem" }}>
-                        اضغط "إضافة وكيل جديد" لبدء إضافة الوكلاء
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  agents.map((agent: any) => (
-                    <tr
-                      key={agent.id}
-                      style={{
-                        borderBottom: "1px solid #f1f5f9",
-                        cursor: "pointer",
-                        transition: "background 0.15s",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8fafc")}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                      onClick={() => setSelectedAgent(selectedAgent?.id === agent.id ? null : agent)}
-                    >
-                      <td style={{ padding: "0.85rem 1rem" }}>
-                        <div style={{ fontWeight: "700", color: "#1a2e6b", fontSize: "0.9rem" }}>
-                          {agent.agentName}
-                        </div>
-                        {agent.email && (
-                          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{agent.email}</div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.85rem 1rem" }}>
-                        <span
-                          style={{
-                            fontFamily: "monospace",
-                            fontSize: "0.85rem",
-                            fontWeight: "700",
-                            color: "#2563eb",
-                            backgroundColor: "#eff6ff",
-                            padding: "0.2rem 0.5rem",
-                            borderRadius: "0.25rem",
-                          }}
-                        >
-                          {agent.agentCode}
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.85rem 1rem", fontSize: "0.85rem", color: "#374151" }}>
-                        {agent.phone || "-"}
-                      </td>
-                      <td style={{ padding: "0.85rem 1rem", fontSize: "0.85rem", color: "#374151" }}>
-                        {agent.branch || "-"}
-                      </td>
-                      <td style={{ padding: "0.85rem 1rem" }}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
-                          {agent.wallets && agent.wallets.length > 0 ? (
-                            agent.wallets.slice(0, 3).map((w: any) => (
-                              <span
-                                key={w.currencyCode}
-                                style={{
-                                  fontSize: "0.7rem",
-                                  fontWeight: "700",
-                                  color: "#065f46",
-                                  backgroundColor: "#d1fae5",
-                                  padding: "0.15rem 0.4rem",
-                                  borderRadius: "0.25rem",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {CURRENCY_SYMBOLS[w.currencyCode] || w.currencyCode}{" "}
-                                {parseFloat(w.balance || "0").toLocaleString("ar-SA")}
-                              </span>
-                            ))
-                          ) : (
-                            <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>لا توجد محافظ</span>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: "0.85rem 1rem" }}>
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            borderRadius: "9999px",
-                            padding: "0.2rem 0.6rem",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            backgroundColor: agent.isActive !== false ? "#d1fae5" : "#fee2e2",
-                            color: agent.isActive !== false ? "#065f46" : "#991b1b",
-                          }}
-                        >
-                          {agent.isActive !== false ? "✅ نشط" : "❌ موقوف"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.85rem 1rem" }}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setLocation(`/admin/agents/${agent.id}`);
-                          }}
-                          style={{
-                            background: "#eff6ff",
-                            color: "#1a2e6b",
-                            border: "1px solid #bfdbfe",
-                            borderRadius: "0.4rem",
-                            padding: "0.35rem 0.75rem",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            cursor: "pointer",
-                            fontFamily: "'Cairo', sans-serif",
-                          }}
-                        >
-                          كشف حساب
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Agent Detail Expanded */}
-          {selectedAgent && (
-            <div
-              style={{
-                padding: "1.25rem 1.5rem",
-                backgroundColor: "#f8fafc",
-                borderTop: "2px solid #e5e7eb",
-              }}
-            >
-              <h4 style={{ fontSize: "0.9rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1rem" }}>
-                💼 تفاصيل محافظ الوكيل: {selectedAgent.agentName}
-              </h4>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "0.75rem" }}>
-                {CURRENCIES.map((currency) => {
-                  const wallet = selectedAgent.wallets?.find((w: any) => w.currencyCode === currency);
-                  return (
-                    <div
-                      key={currency}
-                      style={{
-                        backgroundColor: "white",
-                        borderRadius: "0.75rem",
-                        padding: "0.85rem",
-                        border: "2px solid #e5e7eb",
-                        textAlign: "center",
-                      }}
-                    >
-                      <div style={{ fontSize: "1.1rem", marginBottom: "0.2rem" }}>
-                        {CURRENCY_SYMBOLS[currency]}
-                      </div>
-                      <div style={{ fontSize: "0.7rem", color: "#6b7280", marginBottom: "0.2rem" }}>
-                        {currency}
-                      </div>
-                      <div style={{ fontSize: "1rem", fontWeight: "800", color: wallet ? "#065f46" : "#9ca3af" }}>
-                        {wallet ? parseFloat(wallet.balance || "0").toLocaleString("ar-SA") : "0"}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+    <div className="min-h-screen bg-slate-50" dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }}>
+      {/* Header */}
+      <header className="bg-gradient-to-l from-blue-900 to-blue-700 text-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img src={LOGO_URL} alt="متجر السودان" className="h-10 w-auto" />
+            <div>
+              <h1 className="text-lg font-bold">متجر السودان</h1>
+              <p className="text-xs text-blue-200">إدارة المكاتب والوكلاء</p>
             </div>
+          </div>
+          <nav className="hidden md:flex items-center gap-1">
+            {[
+              { label: "الرئيسية", href: "/admin" },
+              { label: "الإيصالات", href: "/admin/receipts" },
+              { label: "المكاتب", href: "/admin/offices" },
+              { label: "سجل التدقيق", href: "/admin/audit-log" },
+            ].map((item) => (
+              <button key={item.href} onClick={() => setLocation(item.href)}
+                className="px-3 py-1.5 text-sm rounded-md hover:bg-white/20 transition-colors">
+                {item.label}
+              </button>
+            ))}
+          </nav>
+          {user.role === "admin" && (
+            <Button onClick={() => setShowCreate(true)} className="bg-white text-blue-800 hover:bg-blue-50">
+              <Plus className="w-4 h-4 ml-1" />
+              مكتب جديد
+            </Button>
           )}
         </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-700" />
+              المكاتب والوكلاء ({offices.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="p-4 space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+              </div>
+            ) : offices.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">الكود</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">اسم المكتب</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">المدينة</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">المدير</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">الهاتف</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">الحالة</th>
+                      <th className="text-right px-4 py-3 font-semibold text-slate-600">إجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(offices as any[]).map((o) => (
+                      <tr key={o.id} className="border-b hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 font-mono text-blue-800 font-bold">{o.code}</td>
+                        <td className="px-4 py-3 font-medium">{o.name}</td>
+                        <td className="px-4 py-3 text-slate-600">{o.city || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{o.managerName || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{o.phone || "—"}</td>
+                        <td className="px-4 py-3">
+                          <Badge variant={o.isActive ? "default" : "secondary"}>
+                            {o.isActive ? "نشط" : "موقوف"}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost"
+                              onClick={() => setLocation(`/admin/offices/${o.id}`)}>
+                              <BarChart2 className="w-4 h-4" />
+                            </Button>
+                            {user.role === "admin" && (
+                              <Button size="sm" variant="ghost" onClick={() => setEditOffice({ ...o })}>
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-slate-400">
+                <Building2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">لا توجد مكاتب بعد</p>
+                {user.role === "admin" && (
+                  <Button className="mt-4 bg-blue-700 hover:bg-blue-800" onClick={() => setShowCreate(true)}>
+                    <Plus className="w-4 h-4 ml-1" />
+                    إضافة أول مكتب
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
+
+      {/* Create Dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-lg" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <img src={LOGO_URL} alt="" className="h-8 w-auto" />
+              إضافة مكتب / وكيل جديد
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <Label>اسم المكتب *</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="مثال: مكتب الخرطوم" />
+              </div>
+              <div>
+                <Label>كود المكتب *</Label>
+                <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                  placeholder="OFF-001" dir="ltr" />
+              </div>
+              <div>
+                <Label>المدينة</Label>
+                <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })}
+                  placeholder="الخرطوم" />
+              </div>
+              <div>
+                <Label>الدولة</Label>
+                <Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+              </div>
+              <div>
+                <Label>رقم الهاتف</Label>
+                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="+249..." dir="ltr" />
+              </div>
+              <div className="col-span-2">
+                <Label>اسم المدير</Label>
+                <Input value={form.managerName} onChange={(e) => setForm({ ...form, managerName: e.target.value })}
+                  placeholder="اسم مدير المكتب" />
+              </div>
+              <div className="col-span-2">
+                <Label>ملاحظات</Label>
+                <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  rows={2} placeholder="ملاحظات إضافية..." />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2 border-t">
+              <Button variant="outline" onClick={() => setShowCreate(false)}>إلغاء</Button>
+              <Button onClick={handleCreate} disabled={createMutation.isPending} className="bg-blue-700 hover:bg-blue-800">
+                {createMutation.isPending ? "جاري الإنشاء..." : "إنشاء المكتب"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      {editOffice && (
+        <Dialog open={!!editOffice} onOpenChange={() => setEditOffice(null)}>
+          <DialogContent className="max-w-lg" dir="rtl">
+            <DialogHeader>
+              <DialogTitle>تعديل المكتب: {editOffice.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <Label>اسم المكتب</Label>
+                  <Input value={editOffice.name || ""} onChange={(e) => setEditOffice({ ...editOffice, name: e.target.value })} />
+                </div>
+                <div>
+                  <Label>المدينة</Label>
+                  <Input value={editOffice.city || ""} onChange={(e) => setEditOffice({ ...editOffice, city: e.target.value })} />
+                </div>
+                <div>
+                  <Label>الدولة</Label>
+                  <Input value={editOffice.country || ""} onChange={(e) => setEditOffice({ ...editOffice, country: e.target.value })} />
+                </div>
+                <div>
+                  <Label>الهاتف</Label>
+                  <Input value={editOffice.phone || ""} onChange={(e) => setEditOffice({ ...editOffice, phone: e.target.value })} dir="ltr" />
+                </div>
+                <div>
+                  <Label>اسم المدير</Label>
+                  <Input value={editOffice.managerName || ""} onChange={(e) => setEditOffice({ ...editOffice, managerName: e.target.value })} />
+                </div>
+                <div className="col-span-2 flex items-center gap-3">
+                  <Switch checked={editOffice.isActive} onCheckedChange={(v) => setEditOffice({ ...editOffice, isActive: v })} />
+                  <Label>المكتب نشط</Label>
+                </div>
+                <div className="col-span-2">
+                  <Label>ملاحظات</Label>
+                  <Textarea value={editOffice.notes || ""} onChange={(e) => setEditOffice({ ...editOffice, notes: e.target.value })} rows={2} />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end pt-2 border-t">
+                <Button variant="outline" onClick={() => setEditOffice(null)}>إلغاء</Button>
+                <Button onClick={handleUpdate} disabled={updateMutation.isPending} className="bg-blue-700 hover:bg-blue-800">
+                  {updateMutation.isPending ? "جاري الحفظ..." : "حفظ التغييرات"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

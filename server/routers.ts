@@ -2,807 +2,602 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
-  getAgentByUserId,
-  getAgentById,
-  getAllAgents,
-  getAllCustomers,
-  getAgentWallet,
-  getCompanyWallet,
-  getAgentWallets,
-  getTransferByNotificationNumber,
-  getAgentTransfers,
-  getPendingTransfers,
+  upsertUser,
+  getUserById,
+  getAllUsers,
+  updateUserRole,
+  createOffice,
+  getAllOffices,
+  getOfficeById,
+  getOfficeByUserId,
+  updateOffice,
+  getOfficeBalances,
+  createReceipt,
+  getReceiptById,
+  getReceiptByNotificationNumber,
+  getReceiptByVerificationCode,
+  searchReceipts,
+  getReceiptsForOffice,
+  confirmReceiptDeposit,
+  cancelReceipt,
+  expireOldReceipts,
+  addReceiptAttachment,
+  getReceiptAttachments,
+  writeAuditLog,
+  getAuditLogForReceipt,
   getAuditLog,
-  getAllCurrencies,
-  initializeCurrencies,
-  initializeCompanyWallets,
-  getDb,
-  logAuditAction,
+  getAdminDashboardStats,
+  getOfficeDashboardStats,
+  getSetting,
+  setSetting,
 } from "./db";
-import {
-  agents,
-  customers,
-  agentWallets,
-  companyWallet,
-  transfers,
-  ledgerEntries,
-  transferConfirmations,
-} from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
-import { nanoid } from "nanoid";
+import { storagePut } from "./storage";
+import { getDb } from "./db";
+import { receipts, offices } from "../drizzle/schema";
+import { eq } from "drizzle-orm";
 
-// ============ INITIALIZATION PROCEDURES ============
+// ─── Auth Router ──────────────────────────────────────────────────────────────
+const authRouter = router({
+  me: publicProcedure.query(async ({ ctx }) => {
+    return ctx.user ?? null;
+  }),
 
-export const initRouter = router({
-  initializeCurrencies: protectedProcedure.mutation(async ({ ctx }) => {
-    if (ctx.user?.role !== "admin") {
-      throw new Error("Only admin can initialize currencies");
-    }
-    await initializeCurrencies();
-    await initializeCompanyWallets();
+  logout: protectedProcedure.mutation(async ({ ctx }) => {
+    ctx.res.clearCookie(COOKIE_NAME, getSessionCookieOptions(ctx.req));
     return { success: true };
   }),
 });
 
-// ============ AGENTS PROCEDURES ============
-
-export const agentRouter = router({
-  getMyProfile: protectedProcedure.query(async ({ ctx }) => {
-    const agent = await getAgentByUserId(ctx.user!.id);
-    if (!agent) {
-      return null;
-    }
-    const wallets = await getAgentWallets(agent.id);
-    return { ...agent, wallets };
-  }),
-
-  getById: protectedProcedure
-    .input(z.object({ agentId: z.number() }))
-    .query(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "admin") {
-        throw new Error("Only admin can view agent details");
-      }
-      const agent = await getAgentById(input.agentId);
-      if (!agent) return null;
-      const wallets = await getAgentWallets(agent.id);
-      return { ...agent, wallets };
-    }),
-
-  getAgentTransfers: protectedProcedure
-    .input(z.object({ agentId: z.number() }))
-    .query(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "admin") {
-        throw new Error("Only admin can view agent transfers");
-      }
-      return await getAgentTransfers(input.agentId);
-    }),
-
+// ─── Admin: Users Router ──────────────────────────────────────────────────────
+const userRouter = router({
   getAll: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user?.role !== "admin") {
-      throw new Error("Only admin can view all agents");
-    }
-    const allAgents = await getAllAgents();
-    const agentsWithWallets = await Promise.all(
-      allAgents.map(async (agent) => ({
-        ...agent,
-        wallets: await getAgentWallets(agent.id),
-      }))
-    );
-    return agentsWithWallets;
+    if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+    return getAllUsers();
   }),
 
-  create: protectedProcedure
-    .input(
-      z.object({
-        agentName: z.string().min(1),
-        agentCode: z.string().min(1),
-        phone: z.string().optional(),
-        email: z.string().email().optional(),
-        address: z.string().optional(),
-        city: z.string().optional(),
-        country: z.string().optional(),
-        notes: z.string().optional(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "admin") {
-        throw new Error("Only admin can create agents");
-      }
-
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
-
-      const newAgent = await db.insert(agents).values({
-        userId: ctx.user!.id,
-        agentName: input.agentName,
-        agentCode: input.agentCode,
-        phone: input.phone,
-        email: input.email,
-        address: input.address,
-        city: input.city,
-        country: input.country,
-        notes: input.notes,
-      });
-
-      const agentId = (newAgent as any).insertId;
-
-      // Initialize wallets for all currencies
-      const allCurrencies = await getAllCurrencies();
-      for (const curr of allCurrencies) {
-        await db.insert(agentWallets).values({
-          agentId,
-          currencyCode: curr.code,
-          balance: "0",
-          frozenBalance: "0",
-          totalReceived: "0",
-        });
-      }
-
-      await logAuditAction(
-        ctx.user!.id,
-        "CREATE_AGENT",
-        "agents",
-        agentId,
-        { agentName: input.agentName, agentCode: input.agentCode }
-      );
-
-      return { success: true, agentId };
-    }),
-
-  updateBalance: protectedProcedure
-    .input(
-      z.object({
-        agentId: z.number(),
-        currencyCode: z.string(),
-        amount: z.string(),
-        operation: z.enum(["add", "subtract"]),
-        reason: z.string(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "admin") {
-        throw new Error("Only admin can update agent balance");
-      }
-
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
-
-      const wallet = await getAgentWallet(input.agentId, input.currencyCode);
-      if (!wallet) throw new Error("Wallet not found");
-
-      const currentBalance = parseFloat(wallet.balance);
-      const amount = parseFloat(input.amount);
-      const newBalance =
-        input.operation === "add"
-          ? currentBalance + amount
-          : currentBalance - amount;
-
-      if (newBalance < 0) {
-        throw new Error("Insufficient balance");
-      }
-
-      await db
-        .update(agentWallets)
-        .set({ balance: newBalance.toString() })
-        .where(eq(agentWallets.id, wallet.id));
-
-      await logAuditAction(
-        ctx.user!.id,
-        "UPDATE_AGENT_BALANCE",
-        "agent_wallets",
-        wallet.id,
-        {
-          agentId: input.agentId,
-          currencyCode: input.currencyCode,
-          operation: input.operation,
-          amount: input.amount,
-          reason: input.reason,
-        }
-      );
-
+  updateRole: protectedProcedure
+    .input(z.object({
+      userId: z.string(),
+      role: z.enum(["admin", "staff", "agent"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      await updateUserRole(input.userId, input.role);
       return { success: true };
     }),
 });
 
-// ============ CUSTOMERS PROCEDURES ============
+// ─── Offices Router ───────────────────────────────────────────────────────────
+const officeRouter = router({
+  getAll: protectedProcedure
+    .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+    .query(async ({ input }) => {
+      return getAllOffices(input?.activeOnly ?? false);
+    }),
 
-export const customerRouter = router({
-  getAll: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user?.role !== "admin") {
-      throw new Error("Only admin can view all customers");
-    }
-    return await getAllCustomers();
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const office = await getOfficeById(input.id);
+      if (!office) throw new TRPCError({ code: "NOT_FOUND", message: "المكتب غير موجود" });
+      return office;
+    }),
+
+  getMyOffice: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role !== "agent") throw new TRPCError({ code: "FORBIDDEN" });
+    const office = await getOfficeByUserId(ctx.user.id);
+    if (!office) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم ربط حسابك بأي مكتب" });
+    return office;
   }),
 
   create: protectedProcedure
-    .input(
-      z.object({
-        customerId: z.string().min(1),
-        customerName: z.string().min(1),
-        phone: z.string().optional(),
-        email: z.string().email().optional(),
-        address: z.string().optional(),
-        city: z.string().optional(),
-        country: z.string().optional(),
-        notes: z.string().optional(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "admin") {
-        throw new Error("Only admin can create customers");
-      }
-
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
-
-      const result = await db.insert(customers).values({
-        customerId: input.customerId,
-        customerName: input.customerName,
-        phone: input.phone,
-        email: input.email,
-        address: input.address,
-        city: input.city,
-        country: input.country,
-        notes: input.notes,
+    .input(z.object({
+      code: z.string().min(2).max(32),
+      name: z.string().min(2).max(255),
+      city: z.string().optional(),
+      country: z.string().optional(),
+      phone: z.string().optional(),
+      managerName: z.string().optional(),
+      userId: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      const office = await createOffice(input);
+      await writeAuditLog({
+        entityType: "office",
+        entityId: String(office.id),
+        action: "create",
+                actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? undefined,
+        actorRole: ctx.user.role,
+        newValue: office,
       });
-
-      const customerId = (result as any).insertId;
-
-      await logAuditAction(
-        ctx.user!.id,
-        "CREATE_CUSTOMER",
-        "customers",
-        customerId,
-        { customerId: input.customerId, customerName: input.customerName }
-      );
-
-      return { success: true, customerId };
+      return office;
     }),
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      city: z.string().optional(),
+      country: z.string().optional(),
+      phone: z.string().optional(),
+      managerName: z.string().optional(),
+      userId: z.string().optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      const { id, ...data } = input;
+      const office = await updateOffice(id, data);
+      await writeAuditLog({
+        entityType: "office",
+        entityId: String(id),
+        action: "update",
+        actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? undefined,
+        actorRole: ctx.user.role,
+        newValue: office ?? {},
+      });
+      return office;
+    }),
+
+  getBalances: protectedProcedure
+    .input(z.object({ officeId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        // Agents can only see their own office
+        const office = await getOfficeByUserId(ctx.user.id);
+        if (!office || office.id !== input.officeId) throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      return getOfficeBalances(input.officeId);
+    }),
+
+  getDashboardStats: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role !== "agent") throw new TRPCError({ code: "FORBIDDEN" });
+    const office = await getOfficeByUserId(ctx.user.id);
+    if (!office) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم ربط حسابك بأي مكتب" });
+    return getOfficeDashboardStats(office.id);
+  }),
 });
 
-// ============ TRANSFERS PROCEDURES ============
-
-export const transferRouter = router({
-  getMyTransfers: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user?.role !== "agent") {
-      throw new Error("Only agents can view their transfers");
-    }
-
-    const agent = await getAgentByUserId(ctx.user!.id);
-    if (!agent) throw new Error("Agent not found");
-
-    return await getAgentTransfers(agent.id);
-  }),
-
-  getByNotificationNumber: protectedProcedure
-    .input(z.object({ notificationNumber: z.string() }))
-    .query(async ({ input, ctx }) => {
-      const transfer = await getTransferByNotificationNumber(
-        input.notificationNumber
-      );
-
-      if (!transfer) throw new Error("Transfer not found");
-
-      if (ctx.user?.role === "agent") {
-        const agent = await getAgentByUserId(ctx.user!.id);
-        if (!agent || agent.id !== transfer.agentId) {
-          throw new Error("Unauthorized");
-        }
-      }
-
-      return transfer;
-    }),
-
+// ─── Receipts Router ──────────────────────────────────────────────────────────
+const receiptRouter = router({
+  // Admin/Staff: Create new receipt
   create: protectedProcedure
-    .input(
-      z.object({
-        agentId: z.number(),
-        customerId: z.number(),
-        amount: z.string(),
-        currencyCode: z.string(),
-        notes: z.string().optional(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "admin") {
-        throw new Error("Only admin can create transfers");
+    .input(z.object({
+      payerName: z.string().min(2).max(255),
+      payerPhone: z.string().optional(),
+      payerCountry: z.string().optional(),
+      amount: z.string().regex(/^\d+(\.\d{1,4})?$/, "مبلغ غير صحيح"),
+      currencyCode: z.string().min(2).max(10).default("USD"),
+      officeId: z.number().int().positive(),
+      validityDays: z.number().int().min(1).max(365).default(7),
+      notes: z.string().optional(),
+      status: z.enum(["draft", "pending_deposit"]).default("pending_deposit"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({ code: "FORBIDDEN" });
       }
 
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      const office = await getOfficeById(input.officeId);
+      if (!office) throw new TRPCError({ code: "NOT_FOUND", message: "المكتب غير موجود" });
+      if (!office.isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "المكتب غير نشط" });
 
-      const agent = await getAgentById(input.agentId);
-      if (!agent) throw new Error("Agent not found");
+      const receipt = await createReceipt({ ...input, createdByUserId: ctx.user.id });
 
-      const db2 = await getDb();
-      if (!db2) throw new Error("Database not available");
-      
-      const customerResult = await db2
-        .select()
-        .from(customers)
-        .where(eq(customers.id, input.customerId))
-        .limit(1);
-      
-      const customer = customerResult?.[0];
-
-      if (!customer) throw new Error("Customer not found");
-
-      const notificationNumber = nanoid(12).toUpperCase();
-      const secretCode = nanoid(8).toUpperCase();
-      const transferId = `TRF-${Date.now()}-${nanoid(6)}`;
-
-      const result = await db.insert(transfers).values({
-        transferId,
-        notificationNumber,
-        secretCode,
-        agentId: input.agentId,
-        customerId: input.customerId,
-        amount: input.amount,
-        currencyCode: input.currencyCode,
-        status: "pending",
-        notes: input.notes,
+      await writeAuditLog({
+        entityType: "receipt",
+        entityId: String(receipt.id),
+        action: "create",
+        actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? undefined,
+        actorRole: ctx.user.role,
+        newValue: { notificationNumber: receipt.notificationNumber, status: receipt.status },
+        notes: `إنشاء إيصال جديد للدافع: ${receipt.payerName}`,
       });
 
-      const newTransferId = (result as any).insertId;
+      return receipt;
+    }),
 
-      await logAuditAction(
-        ctx.user!.id,
-        "CREATE_TRANSFER",
-        "transfers",
-        newTransferId,
-        {
-          transferId,
-          notificationNumber,
-          agentId: input.agentId,
-          customerId: input.customerId,
-          amount: input.amount,
-          currencyCode: input.currencyCode,
+  // Get receipt by ID (admin/staff full details, agent limited)
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const receipt = await getReceiptById(input.id);
+      if (!receipt) throw new TRPCError({ code: "NOT_FOUND" });
+
+      if (ctx.user.role === "agent") {
+        const office = await getOfficeByUserId(ctx.user.id);
+        if (!office || office.id !== receipt.officeId) throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      const [attachments, auditLogs] = await Promise.all([
+        getReceiptAttachments(receipt.id),
+        getAuditLogForReceipt(receipt.id),
+      ]);
+
+      const office = await getOfficeById(receipt.officeId);
+
+      return { ...receipt, attachments, auditLogs, office };
+    }),
+
+  // Search by notification number (agent: for their office only)
+  findByNotificationNumber: protectedProcedure
+    .input(z.object({ notificationNumber: z.string() }))
+    .query(async ({ ctx, input }) => {
+      // Expire old receipts first
+      await expireOldReceipts();
+
+      const receipt = await getReceiptByNotificationNumber(input.notificationNumber.toUpperCase().trim());
+      if (!receipt) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم العثور على إيصال بهذا الرقم" });
+
+      if (ctx.user.role === "agent") {
+        const office = await getOfficeByUserId(ctx.user.id);
+        if (!office || office.id !== receipt.officeId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "هذا الإيصال مخصص لمكتب آخر" });
         }
-      );
+      }
+
+      const office = await getOfficeById(receipt.officeId);
+      return { ...receipt, office };
+    }),
+
+  // Search (admin/staff: all, agent: their office)
+  search: protectedProcedure
+    .input(z.object({
+      query: z.string().optional(),
+      officeId: z.number().optional(),
+      status: z.string().optional(),
+      fromDate: z.number().optional(),
+      toDate: z.number().optional(),
+      limit: z.number().min(1).max(200).default(50),
+      offset: z.number().default(0),
+    }))
+    .query(async ({ ctx, input }) => {
+      let officeId = input.officeId;
+
+      if (ctx.user.role === "agent") {
+        const office = await getOfficeByUserId(ctx.user.id);
+        if (!office) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم ربط حسابك بأي مكتب" });
+        officeId = office.id;
+      }
+
+      const result = await searchReceipts({ ...input, officeId });
+
+      // Enrich with office names
+      const officeIds = Array.from(new Set(result.rows.map((r) => r.officeId)));
+      const officeList = await Promise.all(officeIds.map((id) => getOfficeById(id)));
+      const officeMap = Object.fromEntries(officeList.filter(Boolean).map((o) => [o!.id, o!.name]));
 
       return {
-        success: true,
-        transfer: {
-          id: newTransferId,
-          transferId,
-          notificationNumber,
-          secretCode,
-        },
+        rows: result.rows.map((r) => ({ ...r, officeName: officeMap[r.officeId] ?? "" })),
+        total: result.total,
       };
     }),
 
-  confirmTransfer: protectedProcedure
-    .input(
-      z.object({
-        notificationNumber: z.string(),
-        secretCode: z.string(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "agent") {
-        throw new Error("Only agents can confirm transfers");
+  // Agent: Confirm deposit received
+  confirmDeposit: protectedProcedure
+    .input(z.object({
+      receiptId: z.number(),
+      receivedNotes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "agent" && ctx.user.role !== "staff" && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
       }
 
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      const receipt = await getReceiptById(input.receiptId);
+      if (!receipt) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const agent = await getAgentByUserId(ctx.user!.id);
-      if (!agent) throw new Error("Agent not found");
-
-      const transfer = await getTransferByNotificationNumber(
-        input.notificationNumber
-      );
-      if (!transfer) throw new Error("Transfer not found");
-
-      if (transfer.agentId !== agent.id) {
-        throw new Error("Unauthorized");
-      }
-
-      if (transfer.status !== "pending") {
-        throw new Error("Transfer is not pending");
-      }
-
-      if (transfer.secretCode !== input.secretCode) {
-        throw new Error("Invalid secret code");
-      }
-
-      // Validate agent wallet exists
-      const agentWallet = await getAgentWallet(
-        agent.id,
-        transfer.currencyCode
-      );
-      if (!agentWallet) {
-        throw new Error(`Agent wallet not found for currency ${transfer.currencyCode}`);
-      }
-
-      // Validate company wallet exists and has sufficient balance
-      const companyWlt = await getCompanyWallet(transfer.currencyCode);
-      if (!companyWlt) {
-        throw new Error(`Company wallet not found for currency ${transfer.currencyCode}`);
-      }
-
-      const companyBalance = parseFloat(companyWlt.balance);
-      const transferAmount = parseFloat(transfer.amount);
-      if (companyBalance < transferAmount) {
-        throw new Error(`Insufficient company balance. Available: ${companyBalance}, Required: ${transferAmount}`);
-      }
-
-      const now = new Date();
-
-      // Update transfer status
-      await db
-        .update(transfers)
-        .set({ status: "confirmed", confirmedAt: now })
-        .where(eq(transfers.id, transfer.id));
-
-      // Record confirmation
-      await db.insert(transferConfirmations).values({
-        transferId: transfer.id,
-        agentId: agent.id,
-        confirmedByUserId: ctx.user!.id,
-        confirmationTime: now,
-      });
-
-      // Update agent wallet (add amount)
-      const newAgentBalance =
-        parseFloat(agentWallet.balance) + transferAmount;
-      const newAgentTotalReceived =
-        parseFloat(agentWallet.totalReceived) + transferAmount;
-
-      await db
-        .update(agentWallets)
-        .set({
-          balance: newAgentBalance.toString(),
-          totalReceived: newAgentTotalReceived.toString(),
-        })
-        .where(eq(agentWallets.id, agentWallet.id));
-
-      // Update company wallet (subtract amount)
-      const newCompanyBalance = companyBalance - transferAmount;
-      const newCompanyTotalTransferred =
-        parseFloat(companyWlt.totalTransferred) + transferAmount;
-
-      await db
-        .update(companyWallet)
-        .set({
-          balance: newCompanyBalance.toString(),
-          totalTransferred: newCompanyTotalTransferred.toString(),
-        })
-        .where(eq(companyWallet.currencyCode, transfer.currencyCode));
-
-      // Create ledger entries (double entry accounting)
-      // Debit: Agent account
-      await db.insert(ledgerEntries).values({
-        transferId: transfer.id,
-        entryType: "debit",
-        accountType: "agent",
-        accountId: agent.id,
-        amount: transfer.amount,
-        currencyCode: transfer.currencyCode,
-        description: `Transfer confirmation for notification ${input.notificationNumber}`,
-      });
-
-      // Credit: Company account
-      await db.insert(ledgerEntries).values({
-        transferId: transfer.id,
-        entryType: "credit",
-        accountType: "company",
-        accountId: 0,
-        amount: transfer.amount,
-        currencyCode: transfer.currencyCode,
-        description: `Transfer debit from company for notification ${input.notificationNumber}`,
-      });
-
-      await logAuditAction(
-        ctx.user!.id,
-        "CONFIRM_TRANSFER",
-        "transfers",
-        transfer.id,
-        {
-          notificationNumber: input.notificationNumber,
-          amount: transfer.amount,
-          currencyCode: transfer.currencyCode,
-          agentBalance: newAgentBalance.toString(),
-          companyBalance: newCompanyBalance.toString(),
+      // Agents can only confirm for their office
+      if (ctx.user.role === "agent") {
+        const office = await getOfficeByUserId(ctx.user.id);
+        if (!office || office.id !== receipt.officeId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "هذا الإيصال مخصص لمكتب آخر" });
         }
-      );
+      }
 
-      return { success: true };
+      const previousStatus = receipt.status;
+      const updated = await confirmReceiptDeposit({
+        receiptId: input.receiptId,
+        receivedByUserId: ctx.user.id,
+        receivedNotes: input.receivedNotes,
+      });
+
+      await writeAuditLog({
+        entityType: "receipt",
+        entityId: String(receipt.id),
+        action: "confirm_deposit",
+        actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? undefined,
+        actorRole: ctx.user.role,
+        previousValue: { status: previousStatus },
+        newValue: { status: "received", receivedAt: Date.now() },
+        notes: `تأكيد استلام المبلغ: ${receipt.amount} ${receipt.currencyCode}`,
+      });
+
+      return updated;
     }),
 
-  getStats: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user?.role !== "admin") {
-      throw new Error("Only admin can view stats");
-    }
-    const db = await getDb();
-    if (!db) return { pending: 0, disbursed: 0, total: 0 };
-    const allTransfers = await db.select().from(transfers);
-    const pending = allTransfers.filter((t) => t.status === "pending").length;
-    const disbursed = allTransfers.filter((t) => t.status === "disbursed" || t.status === "confirmed").length;
-    const total = allTransfers.length;
-    return { pending, disbursed, total };
-  }),
+  // Admin: Cancel receipt
+  cancel: protectedProcedure
+    .input(z.object({
+      receiptId: z.number(),
+      cancelReason: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
 
-  getChartData: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user?.role !== "admin") {
-      throw new Error("Only admin can view chart data");
-    }
-    const db = await getDb();
-    if (!db) return { byCurrency: [], byStatus: [], last7Days: [] };
-    const allTransfers = await db.select().from(transfers);
+      const receipt = await getReceiptById(input.receiptId);
+      if (!receipt) throw new TRPCError({ code: "NOT_FOUND" });
 
-    // By currency
-    const currencyMap: Record<string, { amount: number; count: number }> = {};
-    for (const t of allTransfers) {
-      const c = t.currencyCode || "USD";
-      if (!currencyMap[c]) currencyMap[c] = { amount: 0, count: 0 };
-      currencyMap[c].amount += parseFloat(t.amount || "0");
-      currencyMap[c].count += 1;
-    }
-    const byCurrency = Object.entries(currencyMap).map(([currency, data]) => ({
-      currency,
-      amount: data.amount,
-      count: data.count,
-    }));
-
-    // By status
-    const byStatus = [
-      { status: "قيد الانتظار", count: allTransfers.filter(t => t.status === "pending").length },
-      { status: "تم الصرف", count: allTransfers.filter(t => t.status === "disbursed" || t.status === "confirmed").length },
-    ];
-
-    // Last 7 days
-    const now = new Date();
-    const last7Days: { date: string; count: number; amount: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split("T")[0];
-      const dayTransfers = allTransfers.filter(t => {
-        const tDate = new Date(t.createdAt).toISOString().split("T")[0];
-        return tDate === dateStr;
+      const previousStatus = receipt.status;
+      const updated = await cancelReceipt({
+        receiptId: input.receiptId,
+        cancelledByUserId: ctx.user.id,
+        cancelReason: input.cancelReason,
       });
-      last7Days.push({
-        date: dateStr,
-        count: dayTransfers.length,
-        amount: dayTransfers.reduce((sum, t) => sum + parseFloat(t.amount || "0"), 0),
+
+      await writeAuditLog({
+        entityType: "receipt",
+        entityId: String(receipt.id),
+        action: "cancel",
+        actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? undefined,
+        actorRole: ctx.user.role,
+        previousValue: { status: previousStatus },
+        newValue: { status: "cancelled" },
+        notes: input.cancelReason ?? "إلغاء الإيصال",
       });
-    }
 
-    return { byCurrency, byStatus, last7Days };
-  }),
+      return updated;
+    }),
 
-  getPending: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user?.role !== "admin") {
-      throw new Error("Only admin can view pending transfers");
-    }
-    return await getPendingTransfers();
-  }),
+  // Upload attachment
+  addAttachment: protectedProcedure
+    .input(z.object({
+      receiptId: z.number(),
+      fileBase64: z.string(),
+      fileName: z.string(),
+      mimeType: z.string(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const receipt = await getReceiptById(input.receiptId);
+      if (!receipt) throw new TRPCError({ code: "NOT_FOUND" });
 
-  // Public verification for QR Code scanning (no auth required)
+      if (ctx.user.role === "agent") {
+        const office = await getOfficeByUserId(ctx.user.id);
+        if (!office || office.id !== receipt.officeId) throw new TRPCError({ code: "FORBIDDEN" });
+      }
+
+      // Decode base64 and upload
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      const fileKey = `receipts/${receipt.id}/${Date.now()}-${input.fileName}`;
+      const { key, url } = await storagePut(fileKey, buffer, input.mimeType);
+
+      const attachment = await addReceiptAttachment({
+        receiptId: input.receiptId,
+        uploadedByUserId: ctx.user.id,
+        fileKey: key,
+        fileUrl: url,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        fileSize: buffer.length,
+        description: input.description,
+      });
+
+      await writeAuditLog({
+        entityType: "receipt",
+        entityId: String(receipt.id),
+        action: "add_attachment",
+        actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? undefined,
+        actorRole: ctx.user.role,
+        notes: `رفع مرفق: ${input.fileName}`,
+      });
+
+      return attachment;
+    }),
+
+  // Get receipts for a specific office (admin/staff)
+  getByOffice: protectedProcedure
+    .input(z.object({ officeId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const result = await searchReceipts({ officeId: input.officeId, limit: 500, offset: 0 });
+      return result.rows;
+    }),
+  // Get receipts for the current user's office (agent)
+  getMyOfficeReceipts: protectedProcedure
+    .query(async ({ ctx }) => {
+      if (ctx.user.role !== "agent") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      // Find office linked to this user
+      const db = await getDb();
+      if (!db) return [];
+      const office = await db.select().from(offices).where(eq(offices.userId, ctx.user.id)).limit(1);
+      if (!office[0]) return [];
+      const result = await searchReceipts({ officeId: office[0].id, limit: 200, offset: 0 });
+      return result.rows;
+    }),
+  // Agent: verify a receipt by notification number before confirming receipt
+  agentVerify: protectedProcedure
+    .input(z.object({ notificationNumber: z.string(), verificationCode: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "agent" && ctx.user.role !== "staff" && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      await expireOldReceipts();
+      const receipt = await getReceiptByNotificationNumber(input.notificationNumber.toUpperCase().trim());
+      if (!receipt) throw new TRPCError({ code: "NOT_FOUND", message: "رقم الإشعار غير موجود" });
+      if (receipt.status === "received") {
+        throw new TRPCError({ code: "CONFLICT", message: "تم استلام هذا الإيصال مسبقاً" });
+      }
+      if (receipt.status === "cancelled" || receipt.status === "expired") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "هذا الإيصال ملغى أو منتهي الصلاحية" });
+      }
+      const office = await getOfficeById(receipt.officeId);
+      return { receipt: { ...receipt, officeName: office?.name ?? "" } };
+    }),
+  // Agent/Office: confirm receipt of funds
+  confirmReceived: protectedProcedure
+    .input(z.object({
+      receiptId: z.number(),
+      secretCode: z.string(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "agent" && ctx.user.role !== "staff" && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const receipt = await getReceiptById(input.receiptId);
+      if (!receipt) throw new TRPCError({ code: "NOT_FOUND", message: "الإيصال غير موجود" });
+      if (receipt.status === "received") {
+        throw new TRPCError({ code: "CONFLICT", message: "تم استلام هذا الإيصال مسبقاً" });
+      }
+      if (receipt.secretPin !== input.secretCode) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "الرقم السري غير صحيح" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "خطأ في قاعدة البيانات" });
+      const now = Date.now();
+      await db.update(receipts).set({
+        status: "received",
+        receivedAt: now,
+        receivedByUserId: ctx.user.id,
+        updatedAt: now,
+        notes: input.notes ? (receipt.notes ? receipt.notes + "\n" + input.notes : input.notes) : receipt.notes,
+      }).where(eq(receipts.id, input.receiptId));
+      const updated = await getReceiptById(input.receiptId);
+      await writeAuditLog({
+        entityType: "receipt",
+        entityId: String(input.receiptId),
+        action: "confirm_received",
+        actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? undefined,
+        actorRole: ctx.user.role,
+        notes: `تأكيد الاستلام - الرقم السري صحيح`,
+        newValue: updated,
+      });
+      return { receipt: updated };
+    }),
+  // Public verification (for customers - limited info only)
   publicVerify: publicProcedure
     .input(z.object({ notificationNumber: z.string() }))
     .query(async ({ input }) => {
-      const transfer = await getTransferByNotificationNumber(input.notificationNumber);
-      if (!transfer) return null;
+      await expireOldReceipts();
+      const receipt = await getReceiptByNotificationNumber(input.notificationNumber.toUpperCase().trim());
+      if (!receipt) return null;
 
-      // Return safe public info only (no secretCode)
+      const office = await getOfficeById(receipt.officeId);
+
+      // Return only safe public info
       return {
-        notificationNumber: transfer.notificationNumber,
-        amount: transfer.amount,
-        currencyCode: transfer.currencyCode,
-        status: transfer.status,
-        createdAt: transfer.createdAt,
-        confirmedAt: transfer.confirmedAt,
-        agentId: transfer.agentId,
-      };
-    }),
-
-  // Step 3-4 in workflow: Agent verifies transfer by notification number
-  verify: protectedProcedure
-    .input(z.object({ notificationNumber: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      const transfer = await getTransferByNotificationNumber(input.notificationNumber);
-      if (!transfer) throw new Error("لم يتم العثور على الحوالة");
-
-      if (ctx.user?.role === "agent") {
-        const agent = await getAgentByUserId(ctx.user!.id);
-        if (!agent || agent.id !== transfer.agentId) {
-          throw new Error("هذه الحوالة غير مخصصة لك");
-        }
-      }
-
-      return { transfer };
-    }),
-
-  // Step 5-6 in workflow: Agent confirms disbursal with secret code
-  disburse: protectedProcedure
-    .input(z.object({ transferId: z.number(), secretCode: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "agent") {
-        throw new Error("فقط الوكلاء يمكنهم تأكيد الصرف");
-      }
-
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
-
-      const agent = await getAgentByUserId(ctx.user!.id);
-      if (!agent) throw new Error("لم يتم العثور على الوكيل");
-
-      // Get transfer by ID
-      const transferResult = await db
-        .select()
-        .from(transfers)
-        .where(eq(transfers.id, input.transferId))
-        .limit(1);
-      const transfer = transferResult?.[0];
-
-      if (!transfer) throw new Error("لم يتم العثور على الحوالة");
-
-      // Step 7: Prevent duplicate disbursement
-      if (transfer.status === "disbursed" || transfer.status === "confirmed") {
-        throw new Error("تم صرف هذه الحوالة مسبقاً ولا يمكن صرفها مرة أخرى");
-      }
-
-      if (transfer.status !== "pending") {
-        throw new Error("الحوالة غير متاحة للصرف");
-      }
-
-      if (transfer.agentId !== agent.id) {
-        throw new Error("هذه الحوالة غير مخصصة لك");
-      }
-
-      if (transfer.secretCode !== input.secretCode) {
-        throw new Error("الرقم السري غير صحيح");
-      }
-
-      // Validate wallets
-      const agentWallet = await getAgentWallet(agent.id, transfer.currencyCode);
-      if (!agentWallet) {
-        throw new Error(`لا توجد محفظة للوكيل بعملة ${transfer.currencyCode}`);
-      }
-
-      const companyWlt = await getCompanyWallet(transfer.currencyCode);
-      if (!companyWlt) {
-        throw new Error(`لا توجد محفظة للشركة بعملة ${transfer.currencyCode}`);
-      }
-
-      const companyBalance = parseFloat(companyWlt.balance);
-      const transferAmount = parseFloat(transfer.amount);
-      if (companyBalance < transferAmount) {
-        throw new Error(`رصيد الشركة غير كافٍ. المتاح: ${companyBalance}، المطلوب: ${transferAmount}`);
-      }
-
-      const now = new Date();
-
-      // Update transfer status to disbursed
-      await db
-        .update(transfers)
-        .set({ status: "disbursed", confirmedAt: now })
-        .where(eq(transfers.id, transfer.id));
-
-      // Record confirmation
-      await db.insert(transferConfirmations).values({
-        transferId: transfer.id,
-        agentId: agent.id,
-        confirmedByUserId: ctx.user!.id,
-        confirmationTime: now,
-      });
-
-      // Step 6: Add amount to agent wallet
-      const newAgentBalance = parseFloat(agentWallet.balance) + transferAmount;
-      const newAgentTotalReceived = parseFloat(agentWallet.totalReceived) + transferAmount;
-      await db
-        .update(agentWallets)
-        .set({ balance: newAgentBalance.toString(), totalReceived: newAgentTotalReceived.toString() })
-        .where(eq(agentWallets.id, agentWallet.id));
-
-      // Deduct from company wallet
-      const newCompanyBalance = companyBalance - transferAmount;
-      await db
-        .update(companyWallet)
-        .set({ balance: newCompanyBalance.toString(), totalTransferred: (parseFloat(companyWlt.totalTransferred) + transferAmount).toString() })
-        .where(eq(companyWallet.currencyCode, transfer.currencyCode));
-
-      // Double-entry accounting ledger entries
-      await db.insert(ledgerEntries).values({
-        transferId: transfer.id,
-        entryType: "debit",
-        accountType: "agent",
-        accountId: agent.id,
-        amount: transfer.amount,
-        currencyCode: transfer.currencyCode,
-        description: `صرف حوالة ${transfer.notificationNumber} - إضافة لرصيد الوكيل`,
-      });
-
-      await db.insert(ledgerEntries).values({
-        transferId: transfer.id,
-        entryType: "credit",
-        accountType: "company",
-        accountId: 0,
-        amount: transfer.amount,
-        currencyCode: transfer.currencyCode,
-        description: `صرف حوالة ${transfer.notificationNumber} - خصم من رصيد الشركة`,
-      });
-
-      await logAuditAction(
-        ctx.user!.id,
-        "DISBURSE_TRANSFER",
-        "transfers",
-        transfer.id,
-        {
-          notificationNumber: transfer.notificationNumber,
-          amount: transfer.amount,
-          currencyCode: transfer.currencyCode,
-          agentNewBalance: newAgentBalance.toString(),
-          companyNewBalance: newCompanyBalance.toString(),
-        }
-      );
-
-      return {
-        success: true,
-        transfer: {
-          ...transfer,
-          status: "disbursed",
-          newBalance: newAgentBalance.toString(),
-        },
+        notificationNumber: receipt.notificationNumber,
+        verificationCode: receipt.verificationCode,
+        status: receipt.status,
+        payerName: receipt.payerName,
+        amount: receipt.amount,
+        currencyCode: receipt.currencyCode,
+        officeName: office?.name ?? "",
+        officeCity: office?.city ?? "",
+        officeCountry: office?.country ?? "",
+        expiresAt: receipt.expiresAt,
+        createdAt: receipt.createdAt,
+        receivedAt: receipt.receivedAt,
       };
     }),
 });
 
-// ============ AUDIT LOG PROCEDURES ============
-
-export const auditRouter = router({
-  getLog: protectedProcedure
-    .input(
-      z.object({
-        limit: z.number().default(100),
-        offset: z.number().default(0),
-      })
-    )
-    .query(async ({ input, ctx }) => {
-      if (ctx.user?.role !== "admin") {
-        throw new Error("Only admin can view audit log");
-      }
-      return await getAuditLog(input.limit, input.offset);
-    }),
-});
-
-// ============ WALLET PROCEDURES ============
-
-export const walletRouter = router({
-  getCompanyWallets: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user?.role !== "admin") {
-      throw new Error("Only admin can view wallets");
+// ─── Admin Dashboard Router ───────────────────────────────────────────────────
+const dashboardRouter = router({
+  getStats: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+      throw new TRPCError({ code: "FORBIDDEN" });
     }
-    const db = await getDb();
-    if (!db) return [];
-    return await db.select().from(companyWallet);
+    return getAdminDashboardStats();
   }),
+
+  getRecentReceipts: protectedProcedure
+    .input(z.object({ limit: z.number().default(10) }).optional())
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const result = await searchReceipts({ limit: input?.limit ?? 10, offset: 0 });
+      const officeIds = Array.from(new Set(result.rows.map((r) => r.officeId)));
+      const officeList = await Promise.all(officeIds.map((id) => getOfficeById(id)));
+      const officeMap = Object.fromEntries(officeList.filter(Boolean).map((o) => [o!.id, o!.name]));
+      return result.rows.map((r) => ({ ...r, officeName: officeMap[r.officeId] ?? "" }));
+    }),
 });
 
-// ============ MAIN ROUTER ============
-
-export const appRouter = router({
-  system: systemRouter,
-  auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+// ─── Audit Log Router ─────────────────────────────────────────────────────────
+const auditRouter = router({
+  getForReceipt: protectedProcedure
+    .input(z.object({ receiptId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      return getAuditLogForReceipt(input.receiptId);
     }),
-  }),
-  init: initRouter,
-  agent: agentRouter,
-  customer: customerRouter,
-  transfer: transferRouter,
+
+  getAll: protectedProcedure
+    .input(z.object({
+      entityType: z.string().optional(),
+      actorUserId: z.string().optional(),
+      fromDate: z.number().optional(),
+      toDate: z.number().optional(),
+      limit: z.number().default(100),
+      offset: z.number().default(0),
+    }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return getAuditLog(input);
+    }),
+});
+
+// ─── Settings Router ──────────────────────────────────────────────────────────
+const settingsRouter = router({
+  get: protectedProcedure
+    .input(z.object({ key: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return getSetting(input.key);
+    }),
+
+  set: protectedProcedure
+    .input(z.object({ key: z.string(), value: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      await setSetting(input.key, input.value);
+      return { success: true };
+    }),
+});
+
+// ─── Root Router ──────────────────────────────────────────────────────────────
+export const appRouter = router({
+  auth: authRouter,
+  user: userRouter,
+  office: officeRouter,
+  receipt: receiptRouter,
+  dashboard: dashboardRouter,
   audit: auditRouter,
-  wallet: walletRouter,
+  settings: settingsRouter,
+  system: systemRouter,
 });
 
 export type AppRouter = typeof appRouter;

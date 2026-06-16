@@ -63,6 +63,20 @@ function Router() {
     );
   }
 
+  // staff role uses agent interface
+  if (user.role === "staff") {
+    return (
+      <Switch>
+        <Route path="/"><Redirect to="/agent" /></Route>
+        <Route path="/agent" component={AgentDashboard} />
+        <Route path="/agent/transfers" component={AgentTransfers} />
+        <Route path="/agent/profile" component={AgentProfile} />
+        <Route path="/verify/:notificationNumber" component={VerifyTransfer} />
+        <Route path="/verify" component={VerifyTransfer} />
+        <Route><Redirect to="/agent" /></Route>
+      </Switch>
+    );
+  }
   if (user.role === "agent") {
     return (
       <Switch>

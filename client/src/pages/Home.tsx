@@ -61,16 +61,16 @@ export default function Home() {
               fontWeight: "700",
               marginBottom: "1rem"
             }}>
-              نظام تحويلات مالية احترافي
+              نظام إيصالات إيداع واستلام احترافي
             </div>
             <h2 style={{ fontSize: "2.5rem", fontWeight: "900", color: "#1a2e6b", lineHeight: "1.2", marginBottom: "1rem" }}>
               متجر السودان
               <br />
-              <span style={{ color: "#2563eb" }}>للتحويلات المالية</span>
+              <span style={{ color: "#2563eb" }}>لإدارة الإيصالات</span>
             </h2>
             <p style={{ fontSize: "1.1rem", color: "#6b7280", lineHeight: "1.7", marginBottom: "2rem" }}>
-              حل متكامل لإدارة التحويلات المالية متعددة العملات مع دعم كامل للمحاسبة
-              بالقيد المزدوج والأمان العالي وإدارة الوكلاء
+              نظام متكامل لإدارة إيصالات الإيداع والاستلام عبر شبكة مكاتب ووكلاء،
+              مع تتبع كامل لكل عملية وسجل تدقيق احترافي
             </p>
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
               <button

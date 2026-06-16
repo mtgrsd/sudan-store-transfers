@@ -39,18 +39,18 @@ export default function AgentTransfers() {
     if (!user) setLocation("/");
   }, [user, setLocation]);
 
-  const { data: transfers = [], isLoading, refetch } = trpc.transfer.getMyTransfers.useQuery(
+  const { data: transfers = [], isLoading, refetch } = trpc.receipt.getMyOfficeReceipts.useQuery(
     undefined,
     { enabled: !!user }
   );
 
-  const verifyMutation = trpc.transfer.verify.useMutation({
+  const verifyMutation = trpc.receipt.agentVerify.useMutation({
     onSuccess: (data) => {
-      if (data.transfer.status === "disbursed") {
-        setFoundTransfer(data.transfer);
+      if (data.receipt.status === "received") {
+        setFoundTransfer(data.receipt);
         setStep("duplicate");
       } else {
-        setFoundTransfer(data.transfer);
+        setFoundTransfer(data.receipt);
         setStep("verify");
       }
     },
@@ -59,9 +59,9 @@ export default function AgentTransfers() {
     },
   });
 
-  const disburseMutation = trpc.transfer.disburse.useMutation({
+  const disburseMutation = trpc.receipt.confirmReceived.useMutation({
     onSuccess: (data) => {
-      setDisbursedTransfer(data.transfer);
+      setDisbursedTransfer(data.receipt);
       setStep("success");
       refetch();
       toast.success("تم صرف الحوالة بنجاح!");
@@ -84,14 +84,14 @@ export default function AgentTransfers() {
   const handleConfirmDisburse = () => {
     if (!foundTransfer || !secretCode) return;
     disburseMutation.mutate({
-      transferId: foundTransfer.id,
+      receiptId: foundTransfer.id,
       secretCode: secretCode.trim(),
     });
   };
 
   const filteredTransfers = transfers.filter((t: any) => {
-    if (activeTab === "pending") return t.status === "pending";
-    if (activeTab === "disbursed") return t.status === "disbursed";
+    if (activeTab === "pending") return t.status === "pending_deposit";
+    if (activeTab === "disbursed") return t.status === "received";
     return true;
   });
 
@@ -869,11 +869,11 @@ export default function AgentTransfers() {
               { notificationNumber },
               {
                 onSuccess: (data) => {
-                  if (data.transfer.status === "disbursed" || data.transfer.status === "confirmed") {
-                    setFoundTransfer(data.transfer);
+                  if ((data.receipt as any).status === "received") {
+                    setFoundTransfer(data.receipt);
                     setStep("duplicate");
                   } else {
-                    setFoundTransfer(data.transfer);
+                    setFoundTransfer(data.receipt);
                     setStep("verify");
                   }
                 },

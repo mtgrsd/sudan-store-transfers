@@ -35,7 +35,7 @@ export default function AdminAuditLog() {
     }
   }, [user, setLocation]);
 
-  const { data: auditLogs = [], isLoading } = trpc.audit.getLog.useQuery(
+  const { data: auditLogs = [], isLoading } = trpc.audit.getAll.useQuery(
     { limit: 200, offset: 0 },
     { enabled: !!user && user.role === "admin" }
   );
