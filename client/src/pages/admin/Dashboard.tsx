@@ -72,9 +72,10 @@ export default function AdminDashboard() {
           <nav className="hidden md:flex items-center gap-1">
             {[
               { label: "الرئيسية", href: "/admin" },
-              { label: "الإيصالات", href: "/admin/receipts" },
-              { label: "المكاتب", href: "/admin/offices" },
+              { label: "الإيصالات", href: "/admin/transfers" },
+              { label: "المكاتب", href: "/admin/agents" },
               { label: "سجل التدقيق", href: "/admin/audit-log" },
+              { label: "الإعدادات", href: "/admin/settings" },
             ].map((item) => (
               <button
                 key={item.href}
@@ -103,7 +104,7 @@ export default function AdminDashboard() {
               {new Date().toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
             </p>
           </div>
-          <Button onClick={() => setLocation("/admin/receipts")} className="bg-blue-700 hover:bg-blue-800">
+          <Button onClick={() => setLocation("/admin/transfers")} className="bg-blue-700 hover:bg-blue-800">
             <Plus className="w-4 h-4 ml-1" />
             إيصال جديد
           </Button>
@@ -130,10 +131,10 @@ export default function AdminDashboard() {
         {/* Quick Actions */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: "إنشاء إيصال جديد", href: "/admin/receipts", icon: <Plus className="w-5 h-5" />, color: "bg-blue-700" },
-            { label: "إدارة المكاتب", href: "/admin/offices", icon: <Building2 className="w-5 h-5" />, color: "bg-green-700" },
-            { label: "إدارة المستخدمين", href: "/admin/users", icon: <Users className="w-5 h-5" />, color: "bg-purple-700" },
+            { label: "إنشاء إيصال جديد", href: "/admin/transfers", icon: <Plus className="w-5 h-5" />, color: "bg-blue-700" },
+            { label: "إدارة المكاتب", href: "/admin/agents", icon: <Building2 className="w-5 h-5" />, color: "bg-green-700" },
             { label: "سجل التدقيق", href: "/admin/audit-log", icon: <ClipboardList className="w-5 h-5" />, color: "bg-amber-600" },
+            { label: "إعدادات النظام", href: "/admin/settings", icon: <Users className="w-5 h-5" />, color: "bg-slate-700" },
           ].map((action) => (
             <button
               key={action.href}
@@ -195,7 +196,7 @@ export default function AdminDashboard() {
                 <div className="space-y-2">
                   {recent.map((r) => (
                     <div key={r.id} className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-slate-50 rounded px-1"
-                      onClick={() => setLocation(`/admin/receipts/${r.id}`)}>
+                      onClick={() => setLocation(`/admin/transfers`)}>
                       <div>
                         <p className="text-sm font-semibold text-blue-800">{r.notificationNumber}</p>
                         <p className="text-xs text-slate-500">{r.payerName} — {r.officeName}</p>

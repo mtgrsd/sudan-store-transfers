@@ -18,6 +18,7 @@ import AgentDashboard from "./pages/agent/Dashboard";
 import AgentTransfers from "./pages/agent/Transfers";
 import AgentProfile from "./pages/agent/Profile";
 import VerifyTransfer from "./pages/VerifyTransfer";
+import AdminSystemSettings from "./pages/admin/SystemSettings";
 
 function Router() {
   const { user, loading } = useAuth();
@@ -55,6 +56,7 @@ function Router() {
         <Route path="/admin/transfers" component={AdminTransfers} />
         <Route path="/admin/audit-log" component={AdminAuditLog} />
         <Route path="/admin/agents/:agentId" component={AdminAgentStatement} />
+        <Route path="/admin/settings" component={AdminSystemSettings} />
         <Route path="/verify/:notificationNumber" component={VerifyTransfer} />
         <Route path="/verify" component={VerifyTransfer} />
         <Route path="/404" component={NotFound} />

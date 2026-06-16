@@ -35,7 +35,9 @@ import {
   setSetting,
 } from "./db";
 import { storagePut } from "./storage";
-import { getDb } from "./db";
+import {
+  getDb,
+  getAllSettingsMap, } from "./db";
 import { receipts, offices } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 
@@ -493,6 +495,57 @@ const receiptRouter = router({
       });
       return { receipt: updated };
     }),
+  // Export CSV
+  exportCsv: protectedProcedure
+    .input(z.object({
+      fromDate: z.number().optional(),
+      toDate: z.number().optional(),
+      officeId: z.number().optional(),
+      status: z.string().optional(),
+      currencyCode: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const result = await searchReceipts({
+        ...input,
+        limit: 10000,
+        offset: 0,
+      });
+      const officeIds = Array.from(new Set(result.rows.map((r) => r.officeId)));
+      const officeList = await Promise.all(officeIds.map((id) => getOfficeById(id)));
+      const officeMap = Object.fromEntries(officeList.filter(Boolean).map((o) => [o!.id, o!.name]));
+      const statusLabels: Record<string, string> = {
+        pending_deposit: "بانتظار الإيداع",
+        received: "مستلم",
+        cancelled: "ملغى",
+        expired: "منتهي الصلاحية",
+      };
+      const rows = result.rows.map((r) => ({
+        "رقم الإشعار": r.notificationNumber,
+        "اسم الدافع": r.payerName,
+        "رقم الهاتف": r.payerPhone,
+        "الدولة": r.payerCountry ?? "",
+        "المبلغ": r.amount,
+        "العملة": r.currencyCode,
+        "المكتب": officeMap[r.officeId] ?? "",
+        "الحالة": statusLabels[r.status] ?? r.status,
+        "تاريخ الإنشاء": r.createdAt ? new Date(r.createdAt).toLocaleDateString("ar-SA") : "",
+        "تاريخ الاستلام": r.receivedAt ? new Date(r.receivedAt).toLocaleDateString("ar-SA") : "",
+        "ملاحظات": r.notes ?? "",
+      }));
+      // Build CSV string
+      if (rows.length === 0) return { csv: "", count: 0 };
+      const headers = Object.keys(rows[0]);
+      const csvLines = [
+        headers.join(","),
+        ...rows.map((row) =>
+          headers.map((h) => `"${String((row as Record<string, unknown>)[h] ?? "").replace(/"/g, '""')}"`).join(",")
+        ),
+      ];
+      return { csv: csvLines.join("\n"), count: rows.length };
+    }),
   // Public verification (for customers - limited info only)
   publicVerify: publicProcedure
     .input(z.object({ notificationNumber: z.string() }))
@@ -572,6 +625,11 @@ const auditRouter = router({
 
 // ─── Settings Router ──────────────────────────────────────────────────────────
 const settingsRouter = router({
+  getAll: protectedProcedure
+    .query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return getAllSettingsMap();
+    }),
   get: protectedProcedure
     .input(z.object({ key: z.string() }))
     .query(async ({ ctx, input }) => {

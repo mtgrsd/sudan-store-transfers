@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Plus, Search, Eye, XCircle, RefreshCw, FileText } from "lucide-react";
+import { Plus, Search, Eye, XCircle, RefreshCw, FileText, Download } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import TransferReceipt from "@/components/TransferReceipt";
 
@@ -46,6 +46,7 @@ export default function AdminReceipts() {
   const [showCancel, setShowCancel] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [showReceiptPrint, setShowReceiptPrint] = useState<any>(null);
+  const [exportLoading, setExportLoading] = useState(false);
 
   const [form, setForm] = useState({
     payerName: "",
@@ -80,6 +81,35 @@ export default function AdminReceipts() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const { refetch: fetchCsv } = trpc.receipt.exportCsv.useQuery(
+    { status: statusFilter !== "all" ? statusFilter : undefined },
+    { enabled: false }
+  );
+
+  const handleExportCsv = async () => {
+    setExportLoading(true);
+    try {
+      const result = await fetchCsv();
+      if (!result.data || !result.data.csv) {
+        toast.error("لا توجد بيانات للتصدير");
+        return;
+      }
+      const BOM = "\uFEFF";
+      const blob = new Blob([BOM + result.data.csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `receipts_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`تم تصدير ${result.data.count} إيصال`);
+    } catch (err) {
+      toast.error("فشل التصدير");
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const cancelMutation = trpc.receipt.cancel.useMutation({
     onSuccess: () => {
@@ -132,9 +162,10 @@ export default function AdminReceipts() {
           <nav className="hidden md:flex items-center gap-1">
             {[
               { label: "الرئيسية", href: "/admin" },
-              { label: "الإيصالات", href: "/admin/receipts" },
-              { label: "المكاتب", href: "/admin/offices" },
+              { label: "الإيصالات", href: "/admin/transfers" },
+              { label: "المكاتب", href: "/admin/agents" },
               { label: "سجل التدقيق", href: "/admin/audit-log" },
+              { label: "الإعدادات", href: "/admin/settings" },
             ].map((item) => (
               <button key={item.href} onClick={() => setLocation(item.href)}
                 className="px-3 py-1.5 text-sm rounded-md hover:bg-white/20 transition-colors">
@@ -177,6 +208,10 @@ export default function AdminReceipts() {
               </Select>
               <Button variant="outline" onClick={() => utils.receipt.search.invalidate()}>
                 <RefreshCw className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" onClick={handleExportCsv} disabled={exportLoading} title="تصدير CSV">
+                {exportLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span className="hidden sm:inline mr-1">تصدير CSV</span>
               </Button>
             </div>
           </CardContent>

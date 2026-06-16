@@ -487,6 +487,16 @@ export async function getOfficeDashboardStats(officeId: number) {
 
 // ─── System Settings ──────────────────────────────────────────────────────────
 
+export async function getAllSettingsMap(): Promise<Record<string, string>> {
+  const db = await D();
+  const rows = await db.select().from(systemSettings);
+  const map: Record<string, string> = {};
+  for (const row of rows) {
+    map[row.key] = row.value ?? "";
+  }
+  return map;
+}
+
 export async function getSetting(key: string): Promise<string | null> {
   const d = await D();
   const row = await d.select().from(systemSettings).where(eq(systemSettings.key, key)).then((r) => r[0]);
