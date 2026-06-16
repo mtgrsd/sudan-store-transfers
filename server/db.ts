@@ -35,30 +35,27 @@ async function D() {
 
 export async function upsertUser(data: {
   id?: string;
-  openId: string;
+  openId?: string;
   name?: string | null;
   email?: string | null;
   phone?: string | null;
   avatar?: string | null;
-  loginMethod?: string | null;
   lastSignedIn?: Date | null;
 }) {
   const d = await D();
   const now = new Date();
-  // Use openId as id if no id provided
-  const id = data.id ?? data.openId;
+  const id = data.id ?? data.openId ?? String(Date.now());
   await d
     .insert(users)
     .values({
       id,
-      openId: data.openId,
+      openId: data.openId ?? undefined,
       name: data.name ?? undefined,
       email: data.email ?? undefined,
       phone: data.phone ?? undefined,
       avatar: data.avatar ?? undefined,
-      loginMethod: data.loginMethod ?? undefined,
       lastSignedIn: data.lastSignedIn ?? undefined,
-      role: "staff",
+      role: "employee",
     })
     .onDuplicateKeyUpdate({
       set: {
@@ -66,12 +63,14 @@ export async function upsertUser(data: {
         email: data.email ?? undefined,
         phone: data.phone ?? undefined,
         avatar: data.avatar ?? undefined,
-        loginMethod: data.loginMethod ?? undefined,
         lastSignedIn: data.lastSignedIn ?? undefined,
         updatedAt: now,
       },
     });
-  return d.select().from(users).where(eq(users.openId, data.openId)).then((r) => r[0]);
+  const lookupId = data.openId ?? id;
+  return d.select().from(users).where(
+    data.openId ? eq(users.openId, data.openId) : eq(users.id, id)
+  ).then((r) => r[0]);
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -84,14 +83,40 @@ export async function getUserById(id: string) {
   return d.select().from(users).where(eq(users.id, id)).then((r) => r[0] ?? null);
 }
 
+export async function getUserByEmail(email: string) {
+  const d = await D();
+  return d.select().from(users).where(eq(users.email, email.toLowerCase())).then((r) => r[0] ?? null);
+}
+
+export async function getUserByIdOrOpenId(idOrOpenId: string) {
+  const d = await D();
+  // Try numeric id first (local auth), then openId (OAuth)
+  const numericId = parseInt(idOrOpenId);
+  if (!isNaN(numericId)) {
+    const user = await d.select().from(users).where(eq(users.id, idOrOpenId)).then((r) => r[0] ?? null);
+    if (user) return user;
+  }
+  return d.select().from(users).where(eq(users.openId, idOrOpenId)).then((r) => r[0] ?? null);
+}
+
+export async function updateUserLastSignedIn(id: string) {
+  const d = await D();
+  await d.update(users).set({ lastSignedIn: new Date(), updatedAt: new Date() }).where(eq(users.id, id));
+}
+
 export async function getAllUsers() {
   const d = await D();
   return d.select().from(users).orderBy(asc(users.name));
 }
 
-export async function updateUserRole(id: string, role: "admin" | "staff" | "agent") {
+export async function updateUserRole(id: string, role: "super_admin" | "admin" | "employee" | "agent") {
   const d = await D();
   await d.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, id));
+}
+
+export async function updateUserPassword(id: string, passwordHash: string) {
+  const d = await D();
+  await d.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, id));
 }
 
 // ─── Offices ──────────────────────────────────────────────────────────────────

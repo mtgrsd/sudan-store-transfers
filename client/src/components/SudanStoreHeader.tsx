@@ -39,7 +39,11 @@ export default function SudanStoreHeader({
           <div
             className="flex items-center gap-3 cursor-pointer"
             onClick={() =>
-              setLocation(user?.role === "admin" ? "/admin" : "/agent")
+              setLocation(
+              (user?.role === "super_admin" || user?.role === "admin" || user?.role === "employee")
+                ? "/admin"
+                : "/agent"
+            )
             }
           >
             <img
@@ -96,7 +100,7 @@ export default function SudanStoreHeader({
                     color: "rgba(255,255,255,0.65)",
                   }}
                 >
-                  {user.role === "admin" ? "مدير النظام" : "وكيل"}
+                  {user.role === "super_admin" ? "مدير عام" : user.role === "admin" ? "مدير النظام" : user.role === "employee" ? "موظف" : "وكيل"}
                 </div>
               </div>
               <button

@@ -13,20 +13,24 @@ import {
 } from "drizzle-orm/mysql-core";
 import { sql } from "drizzle-orm";
 
-// ─── Users (Manus Auth) ───────────────────────────────────────────────────────
+// ─── Users (Local Auth - Email + Password) ───────────────────────────────────
+// NOTE: The actual DB has id as INT AUTO_INCREMENT; we map it as varchar for string compatibility
 export const users = mysqlTable("users", {
   id: varchar("id", { length: 128 }).primaryKey(),
-  openId: varchar("open_id", { length: 128 }).notNull().unique(),
-  name: varchar("name", { length: 255 }),
-  email: varchar("email", { length: 255 }),
-  phone: varchar("phone", { length: 64 }),
+  openId: varchar("openId", { length: 64 }),                        // OAuth openId (legacy)
+  name: text("name"),
+  email: varchar("email", { length: 320 }).unique(),
+  passwordHash: varchar("password_hash", { length: 255 }),          // bcrypt hash
+  loginMethod: varchar("loginMethod", { length: 64 }),
+  phone: varchar("phone", { length: 20 }),
   avatar: text("avatar"),
-  loginMethod: varchar("login_method", { length: 64 }),
-  role: mysqlEnum("role", ["admin", "staff", "agent"]).notNull().default("staff"),
-  isActive: boolean("is_active").notNull().default(true),
-  lastSignedIn: timestamp("last_signed_in"),
-  createdAt: timestamp("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: timestamp("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  role: mysqlEnum("role", ["super_admin", "admin", "employee", "agent"]).notNull().default("employee"),
+  isActive: boolean("isActive").notNull().default(true),
+  officeId: int("office_id"),                                       // for agents
+  lastSignedIn: timestamp("lastSignedIn"),
+  createdAt: timestamp("createdAt").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp("updatedAt").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: varchar("created_by", { length: 128 }),                // who created this user
 });
 
 // ─── Offices / Agents ────────────────────────────────────────────────────────

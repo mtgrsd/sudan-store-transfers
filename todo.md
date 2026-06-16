@@ -67,6 +67,29 @@
 - [x] التحقق من تحديث الحالة بشكل صحيح - API يعمل بشكل صحيح
 - [x] مراجعة جميع الصلاحيات - admin/staff/agent roles مطبقة
 
-## مهام مستقبلية
-- [ ] إشعارات SMS/واتساب عند إنشاء الإيصال
-- [ ] انتهاء الصلاحية التلقائي عبر Cron Job
+## مهام مستقبلية (مؤجلة بطلب من المستخدم)
+- [ ] إشعارات SMS/واتساب عند إنشاء الإيصال (مؤجلة بطلب المستخدم)
+- [ ] انتهاء الصلاحية التلقائي عبر Cron Job (مؤجلة بطلب المستخدم)
+
+
+## مرحلة إصلاح المصادقة (حرجة)
+- [x] إزالة OAuth بالكامل واستبداله بنظام مصادقة داخلي
+- [x] إضافة Redirect URLs الصحيحة للمعاينة والنشر
+- [x] اختبار local auth flow وإنشاء حساب Admin تجريبي
+- [x] التأكد من نجاح تسجيل الدخول
+
+## نظام المصادقة الداخلي (Email + Password)
+- [x] تحديث users table: إضافة passwordHash, isActive, role (super_admin/admin/employee/agent)
+- [x] تطبيق migration قاعدة البيانات
+- [x] بناء auth procedures: login, logout, me, changePassword
+- [x] إزالة OAuth routes وإضافة local auth (POST /api/auth/login, /api/auth/logout)
+- [x] بناء صفحة Login بالبريد وكلمة المرور (Login.tsx)
+- [x] توجيه المستخدم حسب دوره بعد تسجيل الدخول (super_admin/admin → /admin, agent → /agent)
+- [x] إنشاء حساب super_admin افتراضي للاختبار (admin@sudanstore.com / Admin@2024)
+- [x] منع التسجيل الذاتي (Sign Up) - لا يوجد endpoint للتسجيل
+- [x] إصلاح infinite loop في App.tsx (useEffect بدلاً من Redirect)
+- [x] إضافة changePassword procedure في authRouter
+- [x] إصلاح جميع guards في backend لتشمل super_admin
+- [x] إزالة getLoginUrl من جميع ملفات frontend
+- [x] تحديث SudanStoreHeader لعرض role الصحيح (super_admin/admin/employee/agent)
+- [x] إضافة updateUserPassword في db.ts

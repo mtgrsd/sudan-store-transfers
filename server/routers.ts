@@ -9,6 +9,7 @@ import {
   getUserById,
   getAllUsers,
   updateUserRole,
+  updateUserPassword,
   createOffice,
   getAllOffices,
   getOfficeById,
@@ -44,29 +45,48 @@ import { eq } from "drizzle-orm";
 // ─── Auth Router ──────────────────────────────────────────────────────────────
 const authRouter = router({
   me: publicProcedure.query(async ({ ctx }) => {
-    return ctx.user ?? null;
+    if (!ctx.user) return null;
+    // Never expose passwordHash to the frontend
+    const { passwordHash: _pw, loginMethod: _lm, ...safeUser } = ctx.user as any;
+    return safeUser;
   }),
 
   logout: protectedProcedure.mutation(async ({ ctx }) => {
     ctx.res.clearCookie(COOKIE_NAME, getSessionCookieOptions(ctx.req));
     return { success: true };
   }),
+
+  changePassword: protectedProcedure
+    .input(z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(8, "كلمة المرور يجب أن تكون 8 أحرف على الأقل"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { hashPassword, verifyPassword } = await import("./_core/localAuth");
+      const user = await getUserById(ctx.user.id);
+      if (!user || !user.passwordHash) throw new TRPCError({ code: "BAD_REQUEST", message: "لا يمكن تغيير كلمة المرور" });
+      const isValid = await verifyPassword(input.currentPassword, user.passwordHash);
+      if (!isValid) throw new TRPCError({ code: "UNAUTHORIZED", message: "كلمة المرور الحالية غير صحيحة" });
+      const newHash = await hashPassword(input.newPassword);
+      await updateUserPassword(ctx.user.id, newHash);
+      return { success: true };
+    }),
 });
 
 // ─── Admin: Users Router ──────────────────────────────────────────────────────
 const userRouter = router({
   getAll: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+    if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
     return getAllUsers();
   }),
 
   updateRole: protectedProcedure
     .input(z.object({
       userId: z.string(),
-      role: z.enum(["admin", "staff", "agent"]),
+      role: z.enum(["admin", "employee", "agent"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
       await updateUserRole(input.userId, input.role);
       return { success: true };
     }),
@@ -107,7 +127,7 @@ const officeRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
       const office = await createOffice(input);
       await writeAuditLog({
         entityType: "office",
@@ -133,7 +153,7 @@ const officeRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
       const { id, ...data } = input;
       const office = await updateOffice(id, data);
       await writeAuditLog({
@@ -151,7 +171,7 @@ const officeRouter = router({
   getBalances: protectedProcedure
     .input(z.object({ officeId: z.number() }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin" && ctx.user.role !== "employee") {
         // Agents can only see their own office
         const office = await getOfficeByUserId(ctx.user.id);
         if (!office || office.id !== input.officeId) throw new TRPCError({ code: "FORBIDDEN" });
@@ -183,7 +203,7 @@ const receiptRouter = router({
       status: z.enum(["draft", "pending_deposit"]).default("pending_deposit"),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin" && ctx.user.role !== "employee") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
@@ -290,7 +310,7 @@ const receiptRouter = router({
       receivedNotes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "agent" && ctx.user.role !== "staff" && ctx.user.role !== "admin") {
+      if (ctx.user.role !== "agent" && ctx.user.role !== "employee" && ctx.user.role !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
@@ -334,7 +354,7 @@ const receiptRouter = router({
       cancelReason: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "employee") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
@@ -414,7 +434,7 @@ const receiptRouter = router({
   getByOffice: protectedProcedure
     .input(z.object({ officeId: z.number() }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin" && ctx.user.role !== "employee") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const result = await searchReceipts({ officeId: input.officeId, limit: 500, offset: 0 });
@@ -438,7 +458,7 @@ const receiptRouter = router({
   agentVerify: protectedProcedure
     .input(z.object({ notificationNumber: z.string(), verificationCode: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "agent" && ctx.user.role !== "staff" && ctx.user.role !== "admin") {
+      if (ctx.user.role !== "agent" && ctx.user.role !== "employee" && ctx.user.role !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       await expireOldReceipts();
@@ -461,7 +481,7 @@ const receiptRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "agent" && ctx.user.role !== "staff" && ctx.user.role !== "admin") {
+      if (ctx.user.role !== "agent" && ctx.user.role !== "employee" && ctx.user.role !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const receipt = await getReceiptById(input.receiptId);
@@ -505,7 +525,7 @@ const receiptRouter = router({
       currencyCode: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin" && ctx.user.role !== "employee") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const result = await searchReceipts({
@@ -577,16 +597,16 @@ const receiptRouter = router({
 // ─── Admin Dashboard Router ───────────────────────────────────────────────────
 const dashboardRouter = router({
   getStats: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
-      throw new TRPCError({ code: "FORBIDDEN" });
-    }
-    return getAdminDashboardStats();
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin" && ctx.user.role !== "employee") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      return getAdminDashboardStats();
   }),
 
   getRecentReceipts: protectedProcedure
     .input(z.object({ limit: z.number().default(10) }).optional())
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin" && ctx.user.role !== "employee") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const result = await searchReceipts({ limit: input?.limit ?? 10, offset: 0 });
@@ -602,7 +622,7 @@ const auditRouter = router({
   getForReceipt: protectedProcedure
     .input(z.object({ receiptId: z.number() }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin" && ctx.user.role !== "staff") {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin" && ctx.user.role !== "employee") {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       return getAuditLogForReceipt(input.receiptId);
@@ -618,7 +638,7 @@ const auditRouter = router({
       offset: z.number().default(0),
     }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
       return getAuditLog(input);
     }),
 });
@@ -627,20 +647,20 @@ const auditRouter = router({
 const settingsRouter = router({
   getAll: protectedProcedure
     .query(async ({ ctx }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
       return getAllSettingsMap();
     }),
   get: protectedProcedure
     .input(z.object({ key: z.string() }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
       return getSetting(input.key);
     }),
 
   set: protectedProcedure
     .input(z.object({ key: z.string(), value: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
       await setSetting(input.key, input.value);
       return { success: true };
     }),

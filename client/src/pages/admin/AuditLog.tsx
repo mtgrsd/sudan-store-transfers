@@ -29,18 +29,14 @@ export default function AdminAuditLog() {
   const [filterAction, setFilterAction] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    if (!user || user.role !== "admin") {
-      setLocation("/");
-    }
-  }, [user, setLocation]);
+  const isAdmin = user?.role === "super_admin" || user?.role === "admin";
 
   const { data: auditLogs = [], isLoading } = trpc.audit.getAll.useQuery(
     { limit: 200, offset: 0 },
-    { enabled: !!user && user.role === "admin" }
+    { enabled: !!user && isAdmin }
   );
 
-  if (!user || user.role !== "admin") return null;
+  if (!user || !isAdmin) return null;
 
   const filteredLogs = auditLogs.filter((log: any) => {
     const matchesAction = !filterAction || log.action === filterAction;

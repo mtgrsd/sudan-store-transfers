@@ -1,5 +1,4 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 
@@ -11,7 +10,7 @@ export default function Home() {
 
   useEffect(() => {
     if (user) {
-      if (user.role === "admin") {
+      if (user.role === "super_admin" || user.role === "admin" || user.role === "employee") {
         setLocation("/admin");
       } else if (user.role === "agent") {
         setLocation("/agent");
@@ -28,7 +27,7 @@ export default function Home() {
             <img src={LOGO_URL} alt="متجر السودان" style={{ height: "48px", width: "auto" }} />
           </div>
           <button
-            onClick={() => window.location.href = getLoginUrl()}
+            onClick={() => setLocation("/login")}
             style={{
               background: "linear-gradient(135deg, #1a2e6b, #2563eb)",
               color: "white",
@@ -74,7 +73,7 @@ export default function Home() {
             </p>
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
               <button
-                onClick={() => window.location.href = getLoginUrl()}
+                onClick={() => setLocation("/login")}
                 style={{
                   background: "linear-gradient(135deg, #1a2e6b, #2563eb)",
                   color: "white",
@@ -191,7 +190,7 @@ export default function Home() {
             نظام موثوق وآمن لإدارة التحويلات المالية
           </p>
           <button
-            onClick={() => window.location.href = getLoginUrl()}
+            onClick={() => setLocation("/login")}
             style={{
               background: "white",
               color: "#1a2e6b",

@@ -36,11 +36,8 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
 
-  useEffect(() => {
-    if (user && user.role !== "admin" && user.role !== "staff") {
-      setLocation("/");
-    }
-  }, [user, setLocation]);
+  // super_admin, admin, employee all have access to admin dashboard
+  // No redirect needed here - App.tsx handles routing by role
 
   const { data: stats, isLoading: statsLoading } = trpc.dashboard.getStats.useQuery(
     undefined, { enabled: !!user }
@@ -89,7 +86,7 @@ export default function AdminDashboard() {
           <div className="flex items-center gap-2">
             <span className="text-sm text-blue-200">{user.name}</span>
             <Badge variant="outline" className="text-xs border-blue-300 text-blue-100">
-              {user.role === "admin" ? "مدير" : "موظف"}
+              {user.role === "super_admin" ? "مدير عام" : user.role === "admin" ? "مدير" : "موظف"}
             </Badge>
           </div>
         </div>

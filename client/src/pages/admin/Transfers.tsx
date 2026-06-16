@@ -122,11 +122,8 @@ export default function AdminReceipts() {
     onError: (err) => toast.error(err.message),
   });
 
-  useEffect(() => {
-    if (user && user.role !== "admin" && user.role !== "staff") {
-      setLocation("/");
-    }
-  }, [user, setLocation]);
+  // super_admin, admin, employee all have access
+  // Routing is handled by App.tsx
 
   const handleCreate = () => {
     if (!form.payerName || !form.amount || !form.officeId) {

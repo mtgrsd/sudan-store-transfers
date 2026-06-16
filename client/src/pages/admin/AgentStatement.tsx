@@ -35,10 +35,10 @@ export default function AdminAgentStatement() {
   const agentId = parseInt(params.agentId || "0");
 
   useEffect(() => {
-    if (!user || user.role !== "admin") {
-      setLocation("/");
-    }
+    // routing handled by App.tsx
   }, [user, setLocation]);
+
+  const isAdmin = user?.role === "super_admin" || user?.role === "admin";
 
   const { data: agent, isLoading: agentLoading } = trpc.office.getById.useQuery(
     { id: agentId },
@@ -50,7 +50,7 @@ export default function AdminAgentStatement() {
     { enabled: !!user && agentId > 0 }
   );
 
-  if (!user || user.role !== "admin") return null;
+  if (!user || !isAdmin) return null;
 
   const wallets: any[] = (agent as any)?.wallets || [];
   const disbursedTransfers = (agentTransfers as any[]).filter(
