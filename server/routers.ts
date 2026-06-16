@@ -399,6 +399,27 @@ export const transferRouter = router({
         throw new Error("Invalid secret code");
       }
 
+      // Validate agent wallet exists
+      const agentWallet = await getAgentWallet(
+        agent.id,
+        transfer.currencyCode
+      );
+      if (!agentWallet) {
+        throw new Error(`Agent wallet not found for currency ${transfer.currencyCode}`);
+      }
+
+      // Validate company wallet exists and has sufficient balance
+      const companyWlt = await getCompanyWallet(transfer.currencyCode);
+      if (!companyWlt) {
+        throw new Error(`Company wallet not found for currency ${transfer.currencyCode}`);
+      }
+
+      const companyBalance = parseFloat(companyWlt.balance);
+      const transferAmount = parseFloat(transfer.amount);
+      if (companyBalance < transferAmount) {
+        throw new Error(`Insufficient company balance. Available: ${companyBalance}, Required: ${transferAmount}`);
+      }
+
       const now = new Date();
 
       // Update transfer status
@@ -416,42 +437,31 @@ export const transferRouter = router({
       });
 
       // Update agent wallet (add amount)
-      const agentWallet = await getAgentWallet(
-        agent.id,
-        transfer.currencyCode
-      );
-      if (agentWallet) {
-        const newBalance =
-          parseFloat(agentWallet.balance) + parseFloat(transfer.amount);
-        const newTotalReceived =
-          parseFloat(agentWallet.totalReceived) + parseFloat(transfer.amount);
+      const newAgentBalance =
+        parseFloat(agentWallet.balance) + transferAmount;
+      const newAgentTotalReceived =
+        parseFloat(agentWallet.totalReceived) + transferAmount;
 
-        await db
-          .update(agentWallets)
-          .set({
-            balance: newBalance.toString(),
-            totalReceived: newTotalReceived.toString(),
-          })
-          .where(eq(agentWallets.id, agentWallet.id));
-      }
+      await db
+        .update(agentWallets)
+        .set({
+          balance: newAgentBalance.toString(),
+          totalReceived: newAgentTotalReceived.toString(),
+        })
+        .where(eq(agentWallets.id, agentWallet.id));
 
       // Update company wallet (subtract amount)
-      const companyWlt = await getCompanyWallet(transfer.currencyCode);
-      if (companyWlt) {
-        const newBalance =
-          parseFloat(companyWlt.balance) - parseFloat(transfer.amount);
-        const newTotalTransferred =
-          parseFloat(companyWlt.totalTransferred) +
-          parseFloat(transfer.amount);
+      const newCompanyBalance = companyBalance - transferAmount;
+      const newCompanyTotalTransferred =
+        parseFloat(companyWlt.totalTransferred) + transferAmount;
 
-        await db
-          .update(companyWallet)
-          .set({
-            balance: newBalance.toString(),
-            totalTransferred: newTotalTransferred.toString(),
-          })
-          .where(eq(companyWallet.currencyCode, transfer.currencyCode));
-      }
+      await db
+        .update(companyWallet)
+        .set({
+          balance: newCompanyBalance.toString(),
+          totalTransferred: newCompanyTotalTransferred.toString(),
+        })
+        .where(eq(companyWallet.currencyCode, transfer.currencyCode));
 
       // Create ledger entries (double entry accounting)
       // Debit: Agent account
@@ -485,6 +495,8 @@ export const transferRouter = router({
           notificationNumber: input.notificationNumber,
           amount: transfer.amount,
           currencyCode: transfer.currencyCode,
+          agentBalance: newAgentBalance.toString(),
+          companyBalance: newCompanyBalance.toString(),
         }
       );
 
