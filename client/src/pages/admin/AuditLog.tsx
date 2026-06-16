@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { useEffect } from "react";
+import { trpc } from "@/lib/trpc";
 
 export default function AdminAuditLog() {
   const { user } = useAuth();
@@ -11,6 +12,12 @@ export default function AdminAuditLog() {
       setLocation("/");
     }
   }, [user, setLocation]);
+
+  // Fetch audit logs
+  const { data: auditLogs = [], isLoading } = trpc.audit.getLog.useQuery(
+    { limit: 100, offset: 0 },
+    { enabled: !!user && user.role === "admin" }
+  );
 
   if (!user || user.role !== "admin") {
     return null;
@@ -27,6 +34,9 @@ export default function AdminAuditLog() {
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">سجل العمليات</h3>
+            <span className="text-sm text-gray-600">
+              {auditLogs?.length || 0} عملية
+            </span>
           </div>
           <div className="overflow-x-auto">
             <table className="table">
@@ -40,11 +50,37 @@ export default function AdminAuditLog() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500">
-                    لا توجد عمليات حالياً
-                  </td>
-                </tr>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-gray-500">
+                      جاري التحميل...
+                    </td>
+                  </tr>
+                ) : auditLogs && auditLogs.length > 0 ? (
+                  auditLogs.map((log: any) => (
+                    <tr key={log.id}>
+                      <td className="font-medium text-gray-900">
+                        {log.userId}
+                      </td>
+                      <td>
+                        <span className="badge badge-info">{log.action}</span>
+                      </td>
+                      <td>{log.entityType}</td>
+                      <td className="text-sm text-gray-600">
+                        {log.details || "-"}
+                      </td>
+                      <td className="text-sm">
+                        {new Date(log.createdAt).toLocaleString("ar-SA")}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-gray-500">
+                      لا توجد عمليات حالياً
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

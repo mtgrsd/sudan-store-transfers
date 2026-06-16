@@ -1,17 +1,39 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { trpc } from "@/lib/trpc";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
+  const [stats, setStats] = useState({
+    totalBalance: 0,
+    totalTransfers: 0,
+    pendingTransfers: 0,
+    completedTransfers: 0,
+  });
 
   useEffect(() => {
     if (!user || user.role !== "admin") {
       setLocation("/");
     }
   }, [user, setLocation]);
+
+  // Fetch pending transfers
+  const { data: pendingTransfers = [] } = trpc.transfer.getPending.useQuery(
+    undefined,
+    { enabled: !!user && user.role === "admin" }
+  );
+
+  useEffect(() => {
+    if (pendingTransfers) {
+      setStats((prev) => ({
+        ...prev,
+        pendingTransfers: pendingTransfers.length,
+      }));
+    }
+  }, [pendingTransfers]);
 
   if (!user || user.role !== "admin") {
     return null;
@@ -42,34 +64,34 @@ export default function AdminDashboard() {
 
       {/* Navigation */}
       <nav className="border-b border-gray-200 bg-white">
-        <div className="container flex gap-8">
+        <div className="container flex gap-8 overflow-x-auto">
           <a
             href="/admin"
-            className="border-b-2 border-blue-600 px-4 py-4 font-medium text-blue-600"
+            className="border-b-2 border-blue-600 px-4 py-4 font-medium text-blue-600 whitespace-nowrap"
           >
             الرئيسية
           </a>
           <a
             href="/admin/agents"
-            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900"
+            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900 whitespace-nowrap"
           >
             الوكلاء
           </a>
           <a
             href="/admin/customers"
-            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900"
+            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900 whitespace-nowrap"
           >
             العملاء
           </a>
           <a
             href="/admin/transfers"
-            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900"
+            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900 whitespace-nowrap"
           >
             الحوالات
           </a>
           <a
             href="/admin/audit-log"
-            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900"
+            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900 whitespace-nowrap"
           >
             سجل التدقيق
           </a>
@@ -89,22 +111,22 @@ export default function AdminDashboard() {
         <div className="dashboard-grid">
           <div className="stat-card">
             <div className="stat-label">إجمالي الأرصدة</div>
-            <div className="stat-value">$0.00</div>
+            <div className="stat-value">${stats.totalBalance.toFixed(2)}</div>
             <div className="stat-change">↑ 0% من الشهر الماضي</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">إجمالي التحويلات</div>
-            <div className="stat-value">0</div>
-            <div className="stat-change">↑ 0 تحويل جديد</div>
+            <div className="stat-value">{stats.totalTransfers}</div>
+            <div className="stat-change">↑ {stats.completedTransfers} تحويل مكتمل</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">التحويلات المعلقة</div>
-            <div className="stat-value">0</div>
+            <div className="stat-value">{stats.pendingTransfers}</div>
             <div className="stat-change">بانتظار التأكيد</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">التحويلات المصروفة</div>
-            <div className="stat-value">0</div>
+            <div className="stat-value">{stats.completedTransfers}</div>
             <div className="stat-change">مكتملة بنجاح</div>
           </div>
         </div>
@@ -112,7 +134,7 @@ export default function AdminDashboard() {
         {/* Recent Transfers */}
         <div className="mt-8 card">
           <div className="card-header">
-            <h3 className="card-title">آخر التحويلات</h3>
+            <h3 className="card-title">آخر التحويلات المعلقة</h3>
             <Button className="btn-secondary text-sm">عرض الكل</Button>
           </div>
           <div className="overflow-x-auto">
@@ -128,14 +150,40 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-gray-500">
-                    لا توجد حوالات حالياً
-                  </td>
-                </tr>
+                {pendingTransfers && pendingTransfers.length > 0 ? (
+                  pendingTransfers.slice(0, 5).map((transfer) => (
+                    <tr key={transfer.id}>
+                      <td className="font-mono text-sm">
+                        {transfer.notificationNumber}
+                      </td>
+                      <td>-</td>
+                      <td>{transfer.amount}</td>
+                      <td>{transfer.currencyCode}</td>
+                      <td>
+                        <span className="badge badge-warning">معلقة</span>
+                      </td>
+                      <td>
+                        {new Date(transfer.createdAt).toLocaleDateString("ar-SA")}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-gray-500">
+                      لا توجد حوالات معلقة حالياً
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <Button className="btn-primary py-3">إنشاء حوالة جديدة</Button>
+          <Button className="btn-secondary py-3">إضافة وكيل جديد</Button>
+          <Button className="btn-secondary py-3">إضافة عميل جديد</Button>
         </div>
       </main>
     </div>
