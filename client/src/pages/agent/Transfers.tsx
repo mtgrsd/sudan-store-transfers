@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import SudanStoreHeader from "@/components/SudanStoreHeader";
 import TransferReceipt from "@/components/TransferReceipt";
+import QRScanner from "@/components/QRScanner";
 
 const LOGO_URL = "/manus-storage/sudan-store-logo_c9d76f93.png";
 
@@ -32,6 +33,7 @@ export default function AgentTransfers() {
   const [disbursedTransfer, setDisbursedTransfer] = useState<any>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [activeTab, setActiveTab] = useState<"all" | "pending" | "disbursed">("all");
+  const [showQRScanner, setShowQRScanner] = useState(false);
 
   useEffect(() => {
     if (!user) setLocation("/");
@@ -309,6 +311,36 @@ export default function AgentTransfers() {
               <p style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: "0.25rem" }}>
                 أدخل رقم الإشعار للتحقق
               </p>
+            </div>
+
+            {/* QR Scan Button */}
+            <button
+              type="button"
+              onClick={() => setShowQRScanner(true)}
+              style={{
+                width: "100%",
+                background: "linear-gradient(135deg, #065f46, #10b981)",
+                color: "white",
+                border: "none",
+                borderRadius: "0.75rem",
+                padding: "0.875rem",
+                fontSize: "0.95rem",
+                fontWeight: "700",
+                fontFamily: "'Cairo', sans-serif",
+                cursor: "pointer",
+                marginBottom: "1rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "0.5rem",
+              }}
+            >
+              <span style={{ fontSize: "1.25rem" }}>📷</span>
+              مسح رمز QR
+            </button>
+
+            <div style={{ textAlign: "center", marginBottom: "1rem", color: "#9ca3af", fontSize: "0.75rem" }}>
+              — أو أدخل رقم الإشعار يدوياً —
             </div>
 
             <form onSubmit={handleSearch}>
@@ -823,6 +855,36 @@ export default function AgentTransfers() {
             createdAt: disbursedTransfer.createdAt || new Date(),
           }}
           onClose={() => setShowReceipt(false)}
+        />
+      )}
+
+      {/* QR Scanner Modal */}
+      {showQRScanner && (
+        <QRScanner
+          onScan={(notificationNumber) => {
+            setShowQRScanner(false);
+            setSearchInput(notificationNumber);
+            // Auto-trigger search
+            verifyMutation.mutate(
+              { notificationNumber },
+              {
+                onSuccess: (data) => {
+                  if (data.transfer.status === "disbursed" || data.transfer.status === "confirmed") {
+                    setFoundTransfer(data.transfer);
+                    setStep("duplicate");
+                  } else {
+                    setFoundTransfer(data.transfer);
+                    setStep("verify");
+                  }
+                },
+                onError: (err) => {
+                  toast.error(err.message || "لم يتم العثور على الحوالة");
+                  setStep("search");
+                },
+              }
+            );
+          }}
+          onClose={() => setShowQRScanner(false)}
         />
       )}
     </div>
