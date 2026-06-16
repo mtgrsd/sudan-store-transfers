@@ -13,6 +13,7 @@ import AdminAgents from "./pages/admin/Agents";
 import AdminCustomers from "./pages/admin/Customers";
 import AdminTransfers from "./pages/admin/Transfers";
 import AdminAuditLog from "./pages/admin/AuditLog";
+import AdminAgentStatement from "./pages/admin/AgentStatement";
 import AgentDashboard from "./pages/agent/Dashboard";
 import AgentTransfers from "./pages/agent/Transfers";
 import AgentProfile from "./pages/agent/Profile";
@@ -53,6 +54,7 @@ function Router() {
         <Route path="/admin/customers" component={AdminCustomers} />
         <Route path="/admin/transfers" component={AdminTransfers} />
         <Route path="/admin/audit-log" component={AdminAuditLog} />
+        <Route path="/admin/agents/:agentId" component={AdminAgentStatement} />
         <Route path="/verify/:notificationNumber" component={VerifyTransfer} />
         <Route path="/verify" component={VerifyTransfer} />
         <Route path="/404" component={NotFound} />

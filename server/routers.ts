@@ -70,6 +70,15 @@ export const agentRouter = router({
       return { ...agent, wallets };
     }),
 
+  getAgentTransfers: protectedProcedure
+    .input(z.object({ agentId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      if (ctx.user?.role !== "admin") {
+        throw new Error("Only admin can view agent transfers");
+      }
+      return await getAgentTransfers(input.agentId);
+    }),
+
   getAll: protectedProcedure.query(async ({ ctx }) => {
     if (ctx.user?.role !== "admin") {
       throw new Error("Only admin can view all agents");
@@ -511,9 +520,58 @@ export const transferRouter = router({
     if (!db) return { pending: 0, disbursed: 0, total: 0 };
     const allTransfers = await db.select().from(transfers);
     const pending = allTransfers.filter((t) => t.status === "pending").length;
-    const disbursed = allTransfers.filter((t) => t.status === "disbursed").length;
+    const disbursed = allTransfers.filter((t) => t.status === "disbursed" || t.status === "confirmed").length;
     const total = allTransfers.length;
     return { pending, disbursed, total };
+  }),
+
+  getChartData: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user?.role !== "admin") {
+      throw new Error("Only admin can view chart data");
+    }
+    const db = await getDb();
+    if (!db) return { byCurrency: [], byStatus: [], last7Days: [] };
+    const allTransfers = await db.select().from(transfers);
+
+    // By currency
+    const currencyMap: Record<string, { amount: number; count: number }> = {};
+    for (const t of allTransfers) {
+      const c = t.currencyCode || "USD";
+      if (!currencyMap[c]) currencyMap[c] = { amount: 0, count: 0 };
+      currencyMap[c].amount += parseFloat(t.amount || "0");
+      currencyMap[c].count += 1;
+    }
+    const byCurrency = Object.entries(currencyMap).map(([currency, data]) => ({
+      currency,
+      amount: data.amount,
+      count: data.count,
+    }));
+
+    // By status
+    const byStatus = [
+      { status: "قيد الانتظار", count: allTransfers.filter(t => t.status === "pending").length },
+      { status: "تم الصرف", count: allTransfers.filter(t => t.status === "disbursed" || t.status === "confirmed").length },
+    ];
+
+    // Last 7 days
+    const now = new Date();
+    const last7Days: { date: string; count: number; amount: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split("T")[0];
+      const dayTransfers = allTransfers.filter(t => {
+        const tDate = new Date(t.createdAt).toISOString().split("T")[0];
+        return tDate === dateStr;
+      });
+      last7Days.push({
+        date: dateStr,
+        count: dayTransfers.length,
+        amount: dayTransfers.reduce((sum, t) => sum + parseFloat(t.amount || "0"), 0),
+      });
+    }
+
+    return { byCurrency, byStatus, last7Days };
   }),
 
   getPending: protectedProcedure.query(async ({ ctx }) => {

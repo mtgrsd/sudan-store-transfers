@@ -3,6 +3,19 @@ import { useLocation } from "wouter";
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import SudanStoreHeader from "@/components/SudanStoreHeader";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 
 const LOGO_URL = "/manus-storage/sudan-store-logo_c9d76f93.png";
 
@@ -48,6 +61,10 @@ export default function AdminDashboard() {
   });
 
   const { data: companyWallets = [] } = trpc.wallet.getCompanyWallets.useQuery(undefined, {
+    enabled: !!user && user.role === "admin",
+  });
+
+  const { data: chartData } = trpc.transfer.getChartData.useQuery(undefined, {
     enabled: !!user && user.role === "admin",
   });
 
@@ -333,6 +350,134 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Charts Section */}
+        {chartData && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: "1rem",
+              marginBottom: "1.5rem",
+            }}
+          >
+            {/* Last 7 Days Bar Chart */}
+            <div
+              style={{
+                backgroundColor: "white",
+                borderRadius: "1rem",
+                padding: "1.5rem",
+                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+              }}
+            >
+              <h3 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1rem" }}>
+                📈 الحوالات - آخر 7 أيام
+              </h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={chartData.last7Days} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10, fill: "#6b7280" }}
+                    tickFormatter={(v) => {
+                      const d = new Date(v);
+                      return `${d.getDate()}/${d.getMonth() + 1}`;
+                    }}
+                  />
+                  <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} allowDecimals={false} />
+                  <Tooltip
+                    formatter={(value: any) => [value, "عدد الحوالات"]}
+                    labelFormatter={(label) => {
+                      const d = new Date(label);
+                      return d.toLocaleDateString("ar-SA", { weekday: "short", month: "short", day: "numeric" });
+                    }}
+                    contentStyle={{ fontFamily: "'Cairo', sans-serif", fontSize: "0.8rem", direction: "rtl" }}
+                  />
+                  <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} name="عدد الحوالات" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Status Pie Chart */}
+            <div
+              style={{
+                backgroundColor: "white",
+                borderRadius: "1rem",
+                padding: "1.5rem",
+                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+              }}
+            >
+              <h3 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1rem" }}>
+                🥧 توزيع الحوالات حسب الحالة
+              </h3>
+              {chartData.byStatus.every((s) => s.count === 0) ? (
+                <div style={{ textAlign: "center", padding: "3rem 0", color: "#9ca3af", fontSize: "0.875rem" }}>
+                  <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📊</div>
+                  <div>لا توجد بيانات بعد</div>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={chartData.byStatus.filter((s) => s.count > 0)}
+                      dataKey="count"
+                      nameKey="status"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={70}
+                      label={({ status, count }) => `${status}: ${count}`}
+                      labelLine={false}
+                    >
+                      <Cell fill="#f59e0b" />
+                      <Cell fill="#10b981" />
+                    </Pie>
+                    <Legend
+                      formatter={(value) => (
+                        <span style={{ fontFamily: "'Cairo', sans-serif", fontSize: "0.8rem" }}>{value}</span>
+                      )}
+                    />
+                    <Tooltip
+                      formatter={(value: any) => [value, "عدد"]}
+                      contentStyle={{ fontFamily: "'Cairo', sans-serif", fontSize: "0.8rem", direction: "rtl" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* By Currency Bar Chart */}
+            {chartData.byCurrency.length > 0 && (
+              <div
+                style={{
+                  backgroundColor: "white",
+                  borderRadius: "1rem",
+                  padding: "1.5rem",
+                  boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+                  gridColumn: "1 / -1",
+                }}
+              >
+                <h3 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "1rem" }}>
+                  💱 إجمالي الحوالات حسب العملة
+                </h3>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={chartData.byCurrency} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="currency" tick={{ fontSize: 12, fill: "#374151", fontFamily: "'Cairo', sans-serif" }} />
+                    <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} />
+                    <Tooltip
+                      formatter={(value: any, name: string) => [
+                        name === "count" ? `${value} حوالة` : value.toLocaleString("ar-SA"),
+                        name === "count" ? "عدد الحوالات" : "إجمالي المبلغ",
+                      ]}
+                      contentStyle={{ fontFamily: "'Cairo', sans-serif", fontSize: "0.8rem", direction: "rtl" }}
+                    />
+                    <Bar dataKey="count" fill="#1a2e6b" radius={[4, 4, 0, 0]} name="count" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         )}
 

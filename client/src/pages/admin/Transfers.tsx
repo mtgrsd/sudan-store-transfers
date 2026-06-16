@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import SudanStoreHeader from "@/components/SudanStoreHeader";
 import TransferReceipt from "@/components/TransferReceipt";
+import { QRCodeSVG } from "qrcode.react";
 
 const CURRENCIES = ["USD", "EUR", "USDT", "AED", "SAR", "SDG"];
 
@@ -236,21 +237,47 @@ export default function AdminTransfers() {
               ))}
             </div>
 
+            {/* QR Code Preview */}
             <div
               style={{
                 marginTop: "1rem",
-                padding: "0.75rem",
-                backgroundColor: "#fef3c7",
-                borderRadius: "0.5rem",
-                fontSize: "0.8rem",
-                color: "#92400e",
                 display: "flex",
                 alignItems: "center",
-                gap: "0.5rem",
+                gap: "1rem",
+                padding: "1rem",
+                backgroundColor: "#f8fafc",
+                borderRadius: "0.75rem",
+                border: "1px solid #e2e8f0",
+                flexWrap: "wrap",
               }}
             >
-              <span>⚠️</span>
-              <span>احتفظ بالرقم السري وأرسله للوكيل بشكل آمن. لن يُعرض مرة أخرى.</span>
+              <div style={{ textAlign: "center" }}>
+                <QRCodeSVG
+                  value={`${window.location.origin}/verify/${createdTransfer.notificationNumber}`}
+                  size={80}
+                  level="M"
+                />
+                <div style={{ fontSize: "0.65rem", color: "#9ca3af", marginTop: "0.3rem" }}>
+                  رمز QR للتحقق
+                </div>
+              </div>
+              <div style={{ flex: 1, minWidth: "200px" }}>
+                <div
+                  style={{
+                    padding: "0.75rem",
+                    backgroundColor: "#fef3c7",
+                    borderRadius: "0.5rem",
+                    fontSize: "0.8rem",
+                    color: "#92400e",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span>⚠️</span>
+                  <span>احتفظ بالرقم السري وأرسله للوكيل بشكل آمن. لن يُعرض مرة أخرى.</span>
+                </div>
+              </div>
             </div>
           </div>
         )}
