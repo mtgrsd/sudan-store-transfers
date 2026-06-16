@@ -503,12 +503,195 @@ export const transferRouter = router({
       return { success: true };
     }),
 
+  getStats: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user?.role !== "admin") {
+      throw new Error("Only admin can view stats");
+    }
+    const db = await getDb();
+    if (!db) return { pending: 0, disbursed: 0, total: 0 };
+    const allTransfers = await db.select().from(transfers);
+    const pending = allTransfers.filter((t) => t.status === "pending").length;
+    const disbursed = allTransfers.filter((t) => t.status === "disbursed").length;
+    const total = allTransfers.length;
+    return { pending, disbursed, total };
+  }),
+
   getPending: protectedProcedure.query(async ({ ctx }) => {
     if (ctx.user?.role !== "admin") {
       throw new Error("Only admin can view pending transfers");
     }
     return await getPendingTransfers();
   }),
+
+  // Public verification for QR Code scanning (no auth required)
+  publicVerify: publicProcedure
+    .input(z.object({ notificationNumber: z.string() }))
+    .query(async ({ input }) => {
+      const transfer = await getTransferByNotificationNumber(input.notificationNumber);
+      if (!transfer) return null;
+
+      // Return safe public info only (no secretCode)
+      return {
+        notificationNumber: transfer.notificationNumber,
+        amount: transfer.amount,
+        currencyCode: transfer.currencyCode,
+        status: transfer.status,
+        createdAt: transfer.createdAt,
+        confirmedAt: transfer.confirmedAt,
+        agentId: transfer.agentId,
+      };
+    }),
+
+  // Step 3-4 in workflow: Agent verifies transfer by notification number
+  verify: protectedProcedure
+    .input(z.object({ notificationNumber: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const transfer = await getTransferByNotificationNumber(input.notificationNumber);
+      if (!transfer) throw new Error("لم يتم العثور على الحوالة");
+
+      if (ctx.user?.role === "agent") {
+        const agent = await getAgentByUserId(ctx.user!.id);
+        if (!agent || agent.id !== transfer.agentId) {
+          throw new Error("هذه الحوالة غير مخصصة لك");
+        }
+      }
+
+      return { transfer };
+    }),
+
+  // Step 5-6 in workflow: Agent confirms disbursal with secret code
+  disburse: protectedProcedure
+    .input(z.object({ transferId: z.number(), secretCode: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user?.role !== "agent") {
+        throw new Error("فقط الوكلاء يمكنهم تأكيد الصرف");
+      }
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const agent = await getAgentByUserId(ctx.user!.id);
+      if (!agent) throw new Error("لم يتم العثور على الوكيل");
+
+      // Get transfer by ID
+      const transferResult = await db
+        .select()
+        .from(transfers)
+        .where(eq(transfers.id, input.transferId))
+        .limit(1);
+      const transfer = transferResult?.[0];
+
+      if (!transfer) throw new Error("لم يتم العثور على الحوالة");
+
+      // Step 7: Prevent duplicate disbursement
+      if (transfer.status === "disbursed" || transfer.status === "confirmed") {
+        throw new Error("تم صرف هذه الحوالة مسبقاً ولا يمكن صرفها مرة أخرى");
+      }
+
+      if (transfer.status !== "pending") {
+        throw new Error("الحوالة غير متاحة للصرف");
+      }
+
+      if (transfer.agentId !== agent.id) {
+        throw new Error("هذه الحوالة غير مخصصة لك");
+      }
+
+      if (transfer.secretCode !== input.secretCode) {
+        throw new Error("الرقم السري غير صحيح");
+      }
+
+      // Validate wallets
+      const agentWallet = await getAgentWallet(agent.id, transfer.currencyCode);
+      if (!agentWallet) {
+        throw new Error(`لا توجد محفظة للوكيل بعملة ${transfer.currencyCode}`);
+      }
+
+      const companyWlt = await getCompanyWallet(transfer.currencyCode);
+      if (!companyWlt) {
+        throw new Error(`لا توجد محفظة للشركة بعملة ${transfer.currencyCode}`);
+      }
+
+      const companyBalance = parseFloat(companyWlt.balance);
+      const transferAmount = parseFloat(transfer.amount);
+      if (companyBalance < transferAmount) {
+        throw new Error(`رصيد الشركة غير كافٍ. المتاح: ${companyBalance}، المطلوب: ${transferAmount}`);
+      }
+
+      const now = new Date();
+
+      // Update transfer status to disbursed
+      await db
+        .update(transfers)
+        .set({ status: "disbursed", confirmedAt: now })
+        .where(eq(transfers.id, transfer.id));
+
+      // Record confirmation
+      await db.insert(transferConfirmations).values({
+        transferId: transfer.id,
+        agentId: agent.id,
+        confirmedByUserId: ctx.user!.id,
+        confirmationTime: now,
+      });
+
+      // Step 6: Add amount to agent wallet
+      const newAgentBalance = parseFloat(agentWallet.balance) + transferAmount;
+      const newAgentTotalReceived = parseFloat(agentWallet.totalReceived) + transferAmount;
+      await db
+        .update(agentWallets)
+        .set({ balance: newAgentBalance.toString(), totalReceived: newAgentTotalReceived.toString() })
+        .where(eq(agentWallets.id, agentWallet.id));
+
+      // Deduct from company wallet
+      const newCompanyBalance = companyBalance - transferAmount;
+      await db
+        .update(companyWallet)
+        .set({ balance: newCompanyBalance.toString(), totalTransferred: (parseFloat(companyWlt.totalTransferred) + transferAmount).toString() })
+        .where(eq(companyWallet.currencyCode, transfer.currencyCode));
+
+      // Double-entry accounting ledger entries
+      await db.insert(ledgerEntries).values({
+        transferId: transfer.id,
+        entryType: "debit",
+        accountType: "agent",
+        accountId: agent.id,
+        amount: transfer.amount,
+        currencyCode: transfer.currencyCode,
+        description: `صرف حوالة ${transfer.notificationNumber} - إضافة لرصيد الوكيل`,
+      });
+
+      await db.insert(ledgerEntries).values({
+        transferId: transfer.id,
+        entryType: "credit",
+        accountType: "company",
+        accountId: 0,
+        amount: transfer.amount,
+        currencyCode: transfer.currencyCode,
+        description: `صرف حوالة ${transfer.notificationNumber} - خصم من رصيد الشركة`,
+      });
+
+      await logAuditAction(
+        ctx.user!.id,
+        "DISBURSE_TRANSFER",
+        "transfers",
+        transfer.id,
+        {
+          notificationNumber: transfer.notificationNumber,
+          amount: transfer.amount,
+          currencyCode: transfer.currencyCode,
+          agentNewBalance: newAgentBalance.toString(),
+          companyNewBalance: newCompanyBalance.toString(),
+        }
+      );
+
+      return {
+        success: true,
+        transfer: {
+          ...transfer,
+          status: "disbursed",
+          newBalance: newAgentBalance.toString(),
+        },
+      };
+    }),
 });
 
 // ============ AUDIT LOG PROCEDURES ============
@@ -527,6 +710,19 @@ export const auditRouter = router({
       }
       return await getAuditLog(input.limit, input.offset);
     }),
+});
+
+// ============ WALLET PROCEDURES ============
+
+export const walletRouter = router({
+  getCompanyWallets: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user?.role !== "admin") {
+      throw new Error("Only admin can view wallets");
+    }
+    const db = await getDb();
+    if (!db) return [];
+    return await db.select().from(companyWallet);
+  }),
 });
 
 // ============ MAIN ROUTER ============
@@ -548,6 +744,7 @@ export const appRouter = router({
   customer: customerRouter,
   transfer: transferRouter,
   audit: auditRouter,
+  wallet: walletRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1,125 +1,412 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { trpc } from "@/lib/trpc";
+import SudanStoreHeader from "@/components/SudanStoreHeader";
+
+const AGENT_NAV = [
+  { label: "الرئيسية", href: "/agent" },
+  { label: "الحوالات", href: "/agent/transfers" },
+  { label: "حسابي", href: "/agent/profile" },
+];
+
+const CURRENCY_NAMES: Record<string, string> = {
+  USD: "دولار",
+  EUR: "يورو",
+  USDT: "تيثر",
+  AED: "درهم",
+  SAR: "ريال",
+  SDG: "جنيه",
+};
 
 export default function AgentDashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!user || user.role !== "agent") {
-      setLocation("/");
-    }
+    if (!user) setLocation("/");
   }, [user, setLocation]);
 
-  if (!user || user.role !== "agent") {
-    return null;
-  }
+  const { data: profile } = trpc.agent.getMyProfile.useQuery(undefined, { enabled: !!user });
+  const { data: transfers = [] } = trpc.transfer.getMyTransfers.useQuery(undefined, { enabled: !!user });
+
+  if (!user) return null;
+
+  const pendingTransfers = (transfers as any[]).filter((t: any) => t.status === "pending");
+  const disbursedTransfers = (transfers as any[]).filter(
+    (t: any) => t.status === "disbursed" || t.status === "confirmed"
+  );
+  const wallets: any[] = (profile as any)?.wallets || [];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="border-b border-gray-200 bg-white shadow-sm">
-        <div className="container flex items-center justify-between py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
-              <span className="text-lg font-bold text-white">SD</span>
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#f1f5f9",
+        fontFamily: "'Cairo', sans-serif",
+        direction: "rtl",
+      }}
+    >
+      <SudanStoreHeader navItems={AGENT_NAV} currentPath="/agent" />
+
+      <main style={{ maxWidth: "480px", margin: "0 auto", padding: "1rem" }}>
+        {/* Welcome Card */}
+        <div
+          style={{
+            background: "linear-gradient(135deg, #1a2e6b 0%, #2563eb 100%)",
+            borderRadius: "1.25rem",
+            padding: "1.5rem",
+            marginBottom: "1rem",
+            color: "white",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: "-20px",
+              left: "-20px",
+              width: "120px",
+              height: "120px",
+              borderRadius: "50%",
+              backgroundColor: "rgba(255,255,255,0.05)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              bottom: "-30px",
+              right: "-30px",
+              width: "150px",
+              height: "150px",
+              borderRadius: "50%",
+              backgroundColor: "rgba(255,255,255,0.05)",
+            }}
+          />
+          <div style={{ position: "relative" }}>
+            <div style={{ fontSize: "0.8rem", opacity: 0.8, marginBottom: "0.25rem" }}>
+              مرحباً بك في متجر السودان
             </div>
-            <h1 className="text-xl font-bold text-gray-900">لوحة الوكيل</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">{user.name}</span>
-            <Button
-              onClick={() => logout()}
-              className="btn-secondary text-sm"
+            <div style={{ fontSize: "1.2rem", fontWeight: "800", marginBottom: "0.5rem" }}>
+              {(profile as any)?.name || user.name || "الوكيل"}
+            </div>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                backgroundColor: "rgba(255,255,255,0.15)",
+                borderRadius: "9999px",
+                padding: "0.25rem 0.75rem",
+                fontSize: "0.75rem",
+              }}
             >
-              تسجيل الخروج
-            </Button>
+              <span>🏢</span>
+              <span>{(profile as any)?.officeName || "وكيل معتمد"}</span>
+            </div>
           </div>
         </div>
-      </header>
 
-      {/* Navigation */}
-      <nav className="border-b border-gray-200 bg-white">
-        <div className="container flex gap-8">
-          <a
-            href="/agent"
-            className="border-b-2 border-blue-600 px-4 py-4 font-medium text-blue-600"
+        {/* Stats Row */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: "0.75rem",
+            marginBottom: "1rem",
+          }}
+        >
+          {[
+            {
+              label: "إجمالي الحوالات",
+              value: (transfers as any[]).length,
+              icon: "📋",
+              color: "#1a2e6b",
+            },
+            {
+              label: "قيد الانتظار",
+              value: pendingTransfers.length,
+              icon: "⏳",
+              color: "#92400e",
+            },
+            {
+              label: "تم الصرف",
+              value: disbursedTransfers.length,
+              icon: "✅",
+              color: "#065f46",
+            },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              style={{
+                backgroundColor: "white",
+                borderRadius: "1rem",
+                padding: "0.875rem 0.5rem",
+                textAlign: "center",
+                boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+              }}
+            >
+              <div style={{ fontSize: "1.25rem", marginBottom: "0.25rem" }}>{stat.icon}</div>
+              <div
+                style={{
+                  fontSize: "1.4rem",
+                  fontWeight: "800",
+                  color: stat.color,
+                  lineHeight: 1,
+                }}
+              >
+                {stat.value}
+              </div>
+              <div style={{ fontSize: "0.65rem", color: "#9ca3af", marginTop: "0.25rem" }}>
+                {stat.label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Wallets */}
+        {wallets.length > 0 && (
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "1.25rem",
+              padding: "1.25rem",
+              marginBottom: "1rem",
+              boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+            }}
           >
-            الرئيسية
-          </a>
-          <a
-            href="/agent/transfers"
-            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900"
+            <div
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: "700",
+                color: "#1a2e6b",
+                marginBottom: "1rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+              }}
+            >
+              <span>💰</span>
+              <span>أرصدة المحافظ</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {wallets.map((wallet: any) => (
+                <div
+                  key={wallet.currencyCode}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "0.75rem",
+                    backgroundColor: "#f8fafc",
+                    borderRadius: "0.75rem",
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <div
+                      style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        backgroundColor: "#1a2e6b",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "0.6rem",
+                        fontWeight: "800",
+                        color: "white",
+                      }}
+                    >
+                      {wallet.currencyCode}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.8rem", fontWeight: "700", color: "#1f2937" }}>
+                        {CURRENCY_NAMES[wallet.currencyCode] || wallet.currencyCode}
+                      </div>
+                      <div style={{ fontSize: "0.65rem", color: "#9ca3af" }}>
+                        {wallet.currencyCode}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={{ fontSize: "1rem", fontWeight: "800", color: "#065f46" }}>
+                      {parseFloat(wallet.balance || "0").toLocaleString("ar-SA")}
+                    </div>
+                    <div style={{ fontSize: "0.65rem", color: "#9ca3af" }}>الرصيد الحالي</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Quick Actions */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0.75rem",
+            marginBottom: "1rem",
+          }}
+        >
+          <button
+            onClick={() => setLocation("/agent/transfers")}
+            style={{
+              background: "linear-gradient(135deg, #059669, #047857)",
+              color: "white",
+              border: "none",
+              borderRadius: "1rem",
+              padding: "1.25rem 1rem",
+              fontSize: "0.875rem",
+              fontWeight: "700",
+              fontFamily: "'Cairo', sans-serif",
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "0.5rem",
+              boxShadow: "0 4px 15px rgba(5,150,105,0.3)",
+            }}
           >
-            الحوالات
-          </a>
-          <a
-            href="/agent/profile"
-            className="border-b-2 border-transparent px-4 py-4 font-medium text-gray-600 hover:text-gray-900"
+            <span style={{ fontSize: "1.75rem" }}>💰</span>
+            <span>صرف حوالة</span>
+          </button>
+          <button
+            onClick={() => setLocation("/agent/profile")}
+            style={{
+              background: "linear-gradient(135deg, #7c3aed, #6d28d9)",
+              color: "white",
+              border: "none",
+              borderRadius: "1rem",
+              padding: "1.25rem 1rem",
+              fontSize: "0.875rem",
+              fontWeight: "700",
+              fontFamily: "'Cairo', sans-serif",
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "0.5rem",
+              boxShadow: "0 4px 15px rgba(124,58,237,0.3)",
+            }}
           >
-            ملفي الشخصي
-          </a>
-        </div>
-      </nav>
-
-      {/* Main Content */}
-      <main className="container py-8">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900">مرحباً بك</h2>
-          <p className="mt-2 text-gray-600">
-            إدارة حوالاتك والتحقق من أرصدتك
-          </p>
+            <span style={{ fontSize: "1.75rem" }}>📊</span>
+            <span>كشف الحساب</span>
+          </button>
         </div>
 
-        {/* Dashboard Grid */}
-        <div className="dashboard-grid">
-          <div className="stat-card">
-            <div className="stat-label">الرصيد المتاح (USD)</div>
-            <div className="stat-value">$0.00</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">الرصيد المتاح (SDG)</div>
-            <div className="stat-value">£0.00</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">إجمالي الحوالات</div>
-            <div className="stat-value">0</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">الحوالات المعلقة</div>
-            <div className="stat-value">0</div>
-          </div>
-        </div>
+        {/* Pending Transfers */}
+        {pendingTransfers.length > 0 && (
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "1.25rem",
+              padding: "1.25rem",
+              boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.875rem",
+                  fontWeight: "700",
+                  color: "#1a2e6b",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
+              >
+                <span>⏳</span>
+                <span>الحوالات المعلقة ({pendingTransfers.length})</span>
+              </div>
+              <button
+                onClick={() => setLocation("/agent/transfers")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#2563eb",
+                  fontSize: "0.75rem",
+                  fontFamily: "'Cairo', sans-serif",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                }}
+              >
+                عرض الكل ←
+              </button>
+            </div>
 
-        {/* Recent Transfers */}
-        <div className="mt-8 card">
-          <div className="card-header">
-            <h3 className="card-title">آخر الحوالات</h3>
-            <Button className="btn-secondary text-sm">عرض الكل</Button>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {pendingTransfers.slice(0, 3).map((transfer: any) => (
+                <div
+                  key={transfer.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "0.75rem",
+                    backgroundColor: "#fffbeb",
+                    borderRadius: "0.75rem",
+                    border: "1px solid #fde68a",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: "0.8rem",
+                        fontWeight: "700",
+                        color: "#1a2e6b",
+                      }}
+                    >
+                      {transfer.notificationNumber}
+                    </div>
+                    <div style={{ fontSize: "0.7rem", color: "#9ca3af" }}>
+                      {new Date(transfer.createdAt).toLocaleDateString("ar-SA")}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={{ fontSize: "0.9rem", fontWeight: "800", color: "#065f46" }}>
+                      {parseFloat(transfer.amount).toLocaleString("ar-SA")}
+                    </div>
+                    <div style={{ fontSize: "0.7rem", color: "#6b7280" }}>
+                      {transfer.currencyCode}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>رقم الإشعار</th>
-                  <th>المبلغ</th>
-                  <th>العملة</th>
-                  <th>الحالة</th>
-                  <th>التاريخ</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500">
-                    لا توجد حوالات حالياً
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+        )}
+
+        {/* Empty state */}
+        {(transfers as any[]).length === 0 && (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "2rem",
+              backgroundColor: "white",
+              borderRadius: "1.25rem",
+              boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+            }}
+          >
+            <div style={{ fontSize: "3rem", marginBottom: "0.75rem" }}>📭</div>
+            <div style={{ fontSize: "0.9rem", fontWeight: "700", color: "#374151" }}>
+              لا توجد حوالات بعد
+            </div>
+            <div style={{ fontSize: "0.8rem", color: "#9ca3af", marginTop: "0.25rem" }}>
+              ستظهر هنا الحوالات المخصصة لك
+            </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );

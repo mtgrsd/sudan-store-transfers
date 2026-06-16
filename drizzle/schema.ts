@@ -162,7 +162,7 @@ export const transfers = mysqlTable(
     customerId: int("customerId").notNull(),
     amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
     currencyCode: varchar("currencyCode", { length: 10 }).notNull(),
-    status: mysqlEnum("status", ["pending", "confirmed", "cancelled"]).default("pending").notNull(),
+    status: mysqlEnum("status", ["pending", "confirmed", "disbursed", "cancelled"]).default("pending").notNull(),
     qrCode: text("qrCode"),
     notes: text("notes"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
