@@ -93,3 +93,14 @@
 - [x] إزالة getLoginUrl من جميع ملفات frontend
 - [x] تحديث SudanStoreHeader لعرض role الصحيح (super_admin/admin/employee/agent)
 - [x] إضافة updateUserPassword في db.ts
+
+
+## مرحلة إعادة التصميم والهوية البصرية (حرجة)
+- [ ] إنشاء Design System احترافي شامل (ألوان، خطوط، مكونات)
+- [ ] تصميم Mockups احترافية للصفحات الرئيسية
+- [ ] الحصول على موافقة المستخدم على التصاميم
+- [ ] تنفيذ Design System في الكود (CSS/Tailwind)
+- [ ] تحديث صفحات Dashboard والإيصالات
+- [ ] تصميم وتنفيذ إيصال PDF احترافي جديد
+- [ ] تحسين صفحات المكاتب والوكلاء
+- [ ] اختبار شامل وحفظ Checkpoint نهائي
