@@ -1,0 +1,1 @@
+ALTER TABLE `transfers` MODIFY COLUMN `status` enum('pending','confirmed','disbursed','cancelled') NOT NULL DEFAULT 'pending';

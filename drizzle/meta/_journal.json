@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1781576902754,
+      "tag": "0000_gifted_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1781577253440,
+      "tag": "0001_normal_miracleman",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1781579407183,
+      "tag": "0002_windy_ultragirl",
+      "breakpoints": true
+    }
+  ]
+}
