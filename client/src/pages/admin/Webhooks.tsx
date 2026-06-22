@@ -193,7 +193,7 @@ export default function AdminWebhooks() {
                     <div className="flex gap-1 shrink-0">
                       <Button size="sm" variant="ghost" title="اختبار"
                         disabled={testMutation.isPending}
-                        onClick={() => testMutation.mutate({ id: h.id })}>
+                        onClick={() => testMutation.mutate({ id: h.id, url: h.url })}>
                         <Send className="w-4 h-4" />
                       </Button>
                       <Button size="sm" variant="ghost" title="تعديل" onClick={() => setEditHook(h)}>

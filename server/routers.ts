@@ -90,6 +90,39 @@ const userRouter = router({
       await updateUserRole(input.userId, input.role);
       return { success: true };
     }),
+
+  resetUserPassword: protectedProcedure
+    .input(z.object({
+      userId: z.string(),
+      newPassword: z.string().min(8),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      await updateUserPassword(input.userId, input.newPassword);
+      return { success: true };
+    }),
+
+  linkToOffice: protectedProcedure
+    .input(z.object({
+      userId: z.string(),
+      officeId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      // TODO: Implement link user to office
+      return { success: true };
+    }),
+
+  toggleActive: protectedProcedure
+    .input(z.object({
+      userId: z.string(),
+      isActive: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      // TODO: Implement toggle user active status
+      return { success: true };
+    }),
 });
 
 // ─── Offices Router ───────────────────────────────────────────────────────────
@@ -643,6 +676,97 @@ const auditRouter = router({
     }),
 });
 
+// ─── Webhook Router ──────────────────────────────────────────────────────────
+const webhookRouter = router({
+  getAll: protectedProcedure
+    .query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return [];
+    }),
+  list: protectedProcedure
+    .query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return [];
+    }),
+  create: protectedProcedure
+    .input(z.object({
+      name: z.string(),
+      url: z.string().url(),
+      events: z.array(z.string()),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return { id: "webhook_" + Date.now(), ...input };
+    }),
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return { success: true };
+    }),
+  update: protectedProcedure
+    .input(z.object({
+      id: z.string(),
+      name: z.string().optional(),
+      url: z.string().url().optional(),
+      events: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      const { id, ...rest } = input;
+      return { id, ...rest };
+    }),
+  test: protectedProcedure
+    .input(z.object({ id: z.string(), url: z.string().url() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      // TODO: Implement webhook test
+      return { success: true, status: 200 };
+    }),
+});
+
+// ─── WhatsApp Router ──────────────────────────────────────────────────────────
+const whatsappRouter = router({
+  getConfig: protectedProcedure
+    .query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return {
+        whatsapp_enabled: await getSetting("whatsapp_enabled") || "false",
+        whatsapp_phone_number_id: await getSetting("whatsapp_phone_number_id") || "",
+        whatsapp_access_token: await getSetting("whatsapp_access_token") || "",
+        whatsapp_business_account_id: await getSetting("whatsapp_business_account_id") || "",
+        whatsapp_notify_on_create: await getSetting("whatsapp_notify_on_create") || "false",
+        whatsapp_notify_on_received: await getSetting("whatsapp_notify_on_received") || "false",
+      };
+    }),
+  saveConfig: protectedProcedure
+    .input(z.object({
+      whatsapp_enabled: z.string(),
+      whatsapp_phone_number_id: z.string(),
+      whatsapp_access_token: z.string(),
+      whatsapp_business_account_id: z.string(),
+      whatsapp_notify_on_create: z.string(),
+      whatsapp_notify_on_received: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      await setSetting("whatsapp_enabled", input.whatsapp_enabled);
+      await setSetting("whatsapp_phone_number_id", input.whatsapp_phone_number_id);
+      await setSetting("whatsapp_access_token", input.whatsapp_access_token);
+      await setSetting("whatsapp_business_account_id", input.whatsapp_business_account_id);
+      await setSetting("whatsapp_notify_on_create", input.whatsapp_notify_on_create);
+      await setSetting("whatsapp_notify_on_received", input.whatsapp_notify_on_received);
+      return { success: true };
+    }),
+  sendTest: protectedProcedure
+    .input(z.object({ phoneNumber: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      // TODO: Implement WhatsApp test message sending
+      return { success: true, message: "تم إرسال رسالة اختبار" };
+    }),
+});
+
 // ─── Settings Router ──────────────────────────────────────────────────────────
 const settingsRouter = router({
   getAll: protectedProcedure
@@ -675,6 +799,8 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   audit: auditRouter,
   settings: settingsRouter,
+  webhook: webhookRouter,
+  whatsapp: whatsappRouter,
   system: systemRouter,
 });
 

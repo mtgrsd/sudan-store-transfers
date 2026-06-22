@@ -140,7 +140,7 @@ export default function AdminWhatsAppSettings() {
                 <Button
                   variant="outline" className="w-full"
                   disabled={!testPhone || testMutation.isPending}
-                  onClick={() => testMutation.mutate({ phone: testPhone })}
+                  onClick={() => testMutation.mutate({ phoneNumber: testPhone })}
                 >
                   {testMutation.isPending ? "جاري الإرسال..." : "إرسال رسالة تجريبية"}
                 </Button>
