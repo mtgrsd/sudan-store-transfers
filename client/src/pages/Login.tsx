@@ -17,18 +17,25 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  // Clear cache on page load to prevent stale session
+  useEffect(() => {
+    localStorage.removeItem("manus-runtime-user-info");
+    localStorage.clear();
+    sessionStorage.clear();
+  }, []);
+
   const meQuery = trpc.auth.me.useQuery(undefined, { retry: false });
 
   useEffect(() => {
     if (meQuery.data) {
       const role = meQuery.data.role;
       if (role === "super_admin" || role === "admin" || role === "employee") {
-        navigate("/admin");
+        window.location.href = "/admin";
       } else if (role === "agent") {
-        navigate("/agent");
+        window.location.href = "/agent";
       }
     }
-  }, [meQuery.data, navigate]);
+  }, [meQuery.data]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,13 +57,14 @@ export default function Login() {
         return;
       }
 
+      // Refresh the page to ensure clean session
       const role = data.user?.role;
       if (role === "super_admin" || role === "admin" || role === "employee") {
-        window.location.href = "/admin";
+        window.location.href = "/admin?t=" + Date.now();
       } else if (role === "agent") {
-        window.location.href = "/agent";
+        window.location.href = "/agent?t=" + Date.now();
       } else {
-        window.location.href = "/";
+        window.location.href = "/?t=" + Date.now();
       }
     } catch {
       setError("خطأ في الاتصال بالخادم. حاول مرة أخرى.");

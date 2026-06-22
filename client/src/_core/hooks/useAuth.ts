@@ -25,17 +25,33 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logout = useCallback(async () => {
     try {
-      // Use local auth logout endpoint
+      // Call logout endpoint to clear server-side session and cookies
       await fetch("/api/auth/logout", {
         method: "POST",
         credentials: "include",
       });
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error("Logout error:", error);
     } finally {
+      // Clear all client-side cache and data
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
-      window.location.href = "/login";
+      
+      // Clear all localStorage
+      localStorage.removeItem("manus-runtime-user-info");
+      localStorage.clear();
+      
+      // Clear all sessionStorage
+      sessionStorage.clear();
+      
+      // Invalidate all tRPC queries to clear cache
+      await utils.invalidate();
+      
+      // Clear any in-memory state
+      if (typeof window !== "undefined") {
+        // Force a hard reload to ensure complete cleanup
+        window.location.href = "/login?t=" + Date.now();
+      }
     }
   }, [utils]);
 

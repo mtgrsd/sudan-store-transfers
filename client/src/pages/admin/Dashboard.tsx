@@ -33,7 +33,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
 
   const { data: stats, isLoading: statsLoading } = trpc.dashboard.getStats.useQuery(
@@ -85,6 +85,32 @@ export default function AdminDashboard() {
             <Badge className="bg-white/20 text-white border-0 text-xs">
               {user.role === "super_admin" ? "مدير عام" : user.role === "admin" ? "مدير" : "موظف"}
             </Badge>
+            <button
+              onClick={() => logout()}
+              style={{
+                background: "#dc2626",
+                border: "2px solid #991b1b",
+                borderRadius: "0.5rem",
+                color: "white",
+                padding: "0.6rem 1.2rem",
+                fontSize: "0.9rem",
+                fontWeight: "600",
+                fontFamily: "'Cairo', sans-serif",
+                cursor: "pointer",
+                transition: "all 0.3s",
+                boxShadow: "0 4px 12px rgba(220, 38, 38, 0.4)",
+              }}
+              onMouseEnter={(e) => {
+                (e.target as HTMLButtonElement).style.background = "#991b1b";
+                (e.target as HTMLButtonElement).style.boxShadow = "0 6px 16px rgba(220, 38, 38, 0.6)";
+              }}
+              onMouseLeave={(e) => {
+                (e.target as HTMLButtonElement).style.background = "#dc2626";
+                (e.target as HTMLButtonElement).style.boxShadow = "0 4px 12px rgba(220, 38, 38, 0.4)";
+              }}
+            >
+              🚪 تسجيل الخروج
+            </button>
           </div>
         </div>
       </header>

@@ -106,26 +106,28 @@ export default function SudanStoreHeader({
               <button
                 onClick={() => logout()}
                 style={{
-                  background: "rgba(255,255,255,0.15)",
-                  border: "1px solid rgba(255,255,255,0.3)",
+                  background: "#dc2626",
+                  border: "2px solid #991b1b",
                   borderRadius: "0.5rem",
                   color: "white",
-                  padding: "0.4rem 0.9rem",
-                  fontSize: "0.8rem",
+                  padding: "0.6rem 1.2rem",
+                  fontSize: "0.9rem",
+                  fontWeight: "600",
                   fontFamily: "'Cairo', sans-serif",
                   cursor: "pointer",
-                  transition: "all 0.2s",
+                  transition: "all 0.3s",
+                  boxShadow: "0 4px 12px rgba(220, 38, 38, 0.4)",
                 }}
                 onMouseEnter={(e) => {
-                  (e.target as HTMLButtonElement).style.background =
-                    "rgba(255,255,255,0.25)";
+                  (e.target as HTMLButtonElement).style.background = "#991b1b";
+                  (e.target as HTMLButtonElement).style.boxShadow = "0 6px 16px rgba(220, 38, 38, 0.6)";
                 }}
                 onMouseLeave={(e) => {
-                  (e.target as HTMLButtonElement).style.background =
-                    "rgba(255,255,255,0.15)";
+                  (e.target as HTMLButtonElement).style.background = "#dc2626";
+                  (e.target as HTMLButtonElement).style.boxShadow = "0 4px 12px rgba(220, 38, 38, 0.4)";
                 }}
               >
-                خروج
+                🚪 تسجيل الخروج
               </button>
             </div>
           )}
