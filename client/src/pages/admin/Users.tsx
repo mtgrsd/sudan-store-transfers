@@ -82,7 +82,7 @@ export default function AdminUsers() {
     const roleChanged = newRole !== editUser.role;
     const officeChanged = newOfficeId !== (editUser.linkedOffice ? String(editUser.linkedOffice.id) : "none");
     if (roleChanged) rolesMutation.mutate({ userId: editUser.id, role: newRole as any });
-    if (officeChanged) linkMutation.mutate({ userId: editUser.id, officeId: newOfficeId !== "none" ? parseInt(newOfficeId) : null });
+    if (officeChanged) linkMutation.mutate({ userId: editUser.id, officeId: newOfficeId !== "none" ? parseInt(newOfficeId) : 0 });
     if (!roleChanged && !officeChanged) setEditUser(null);
   };
 

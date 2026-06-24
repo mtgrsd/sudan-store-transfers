@@ -344,14 +344,14 @@ export default function AdminTransferDetail() {
                 maxLength={8}
                 dir="ltr"
                 className="text-center text-xl font-mono tracking-widest"
-                onKeyDown={(e) => e.key === "Enter" && receipt && confirmPinMutation.mutate({ receiptId: receipt.id, secretPin: pinInput })}
+                onKeyDown={(e) => e.key === "Enter" && receipt && confirmPinMutation.mutate({ receiptId: receipt.id, pin: pinInput })}
               />
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => { setShowConfirmPin(false); setPinInput(""); }}>إلغاء</Button>
               <Button
                 disabled={pinInput.length < 4 || confirmPinMutation.isPending}
-                onClick={() => receipt && confirmPinMutation.mutate({ receiptId: receipt.id, secretPin: pinInput })}
+                onClick={() => receipt && confirmPinMutation.mutate({ receiptId: receipt.id, pin: pinInput })}
               >
                 {confirmPinMutation.isPending ? "جاري التحقق..." : "تأكيد"}
               </Button>
@@ -393,12 +393,9 @@ export default function AdminTransferDetail() {
                 currencyCode: receipt.currencyCode,
                 status: receipt.status,
                 notes: receipt.notes,
-                createdAt: receipt.createdAt,
+                createdAt: new Date(receipt.createdAt),
                 senderName: receipt.payerName,
                 agentName: (receipt as any).office?.name,
-                beneficiaryName: (receipt as any).beneficiaryName,
-                beneficiaryPhone: (receipt as any).beneficiaryPhone,
-                beneficiaryId: (receipt as any).beneficiaryId,
               }}
               onClose={() => setShowPrint(false)}
             />

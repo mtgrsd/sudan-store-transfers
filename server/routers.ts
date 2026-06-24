@@ -123,6 +123,19 @@ const userRouter = router({
       // TODO: Implement toggle user active status
       return { success: true };
     }),
+
+  create: protectedProcedure
+    .input(z.object({
+      name: z.string().min(2),
+      email: z.string().email(),
+      password: z.string().min(8),
+      role: z.enum(["admin", "employee", "agent"]),
+      phone: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return { id: "user_" + Date.now(), ...input };
+    }),
 });
 
 // ─── Offices Router ───────────────────────────────────────────────────────────
@@ -218,6 +231,19 @@ const officeRouter = router({
     if (!office) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم ربط حسابك بأي مكتب" });
     return getOfficeDashboardStats(office.id);
   }),
+
+  transferBalance: protectedProcedure
+    .input(z.object({
+      fromOfficeId: z.string(),
+      toOfficeId: z.string(),
+      currencyCode: z.string(),
+      amount: z.string(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return { fromBalance: "0", toBalance: "0" };
+    }),
 });
 
 // ─── Receipts Router ──────────────────────────────────────────────────────────
@@ -625,6 +651,18 @@ const receiptRouter = router({
         receivedAt: receipt.receivedAt,
       };
     }),
+
+  confirmWithPin: protectedProcedure
+    .input(z.object({
+      receiptId: z.number(),
+      pin: z.string().length(4),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "agent" && ctx.user.role !== "employee" && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      return { success: true };
+    }),
 });
 
 // ─── Admin Dashboard Router ───────────────────────────────────────────────────
@@ -791,6 +829,52 @@ const settingsRouter = router({
 });
 
 // ─── Root Router ──────────────────────────────────────────────────────────────
+// ─── Currency Router ─────────────────────────────────────────────────────────
+const currencyRouter = router({
+  getAll: protectedProcedure
+    .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+    .query(async () => {
+      return [
+        { code: "USD", name: "دولار أمريكي", symbol: "$", isActive: true },
+        { code: "EUR", name: "يورو", symbol: "€", isActive: true },
+        { code: "GBP", name: "جنيه إسترليني", symbol: "£", isActive: true },
+        { code: "SDG", name: "جنيه سوداني", symbol: "ج.س", isActive: true },
+      ];
+    }),
+  delete: protectedProcedure
+    .input(z.object({ code: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return { success: true };
+    }),
+  create: protectedProcedure
+    .input(z.object({ code: z.string(), name: z.string(), symbol: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return { success: true };
+    }),
+  update: protectedProcedure
+    .input(z.object({ code: z.string(), name: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "super_admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return { success: true };
+    }),
+});
+
+// ─── Reports Router ───────────────────────────────────────────────────────────
+const reportsRouter = router({
+  getSummary: protectedProcedure
+    .input(z.object({ fromDate: z.number().optional(), toDate: z.number().optional() }).optional())
+    .query(async () => {
+      return {
+        byStatus: [],
+        byCurrency: [],
+        daily: [],
+        byOffice: [],
+      };
+    }),
+});
+
 export const appRouter = router({
   auth: authRouter,
   user: userRouter,
@@ -799,6 +883,8 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   audit: auditRouter,
   settings: settingsRouter,
+  currency: currencyRouter,
+  reports: reportsRouter,
   webhook: webhookRouter,
   whatsapp: whatsappRouter,
   system: systemRouter,

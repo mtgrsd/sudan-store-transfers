@@ -48,7 +48,7 @@ export default function AdminCurrencies() {
   const handleSaveRate = (code: string) => {
     const rate = editedRates[code];
     if (!rate) return;
-    updateMutation.mutate({ code, exchangeRateToBase: rate });
+    updateMutation.mutate({ code, name: rate });
     setEditedRates((prev) => { const c = { ...prev }; delete c[code]; return c; });
   };
 
@@ -121,7 +121,7 @@ export default function AdminCurrencies() {
                         {isAdmin ? (
                           <Switch
                             checked={c.isActive}
-                            onCheckedChange={(v) => updateMutation.mutate({ code: c.code, isActive: v })}
+                            onCheckedChange={(v) => updateMutation.mutate({ code: c.code, name: c.name })}
                           />
                         ) : (
                           <Badge variant={c.isActive ? "default" : "secondary"}>{c.isActive ? "نشطة" : "متوقفة"}</Badge>

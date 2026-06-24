@@ -22,14 +22,9 @@ export default function AdminAccounting() {
   const { data: offices = [] } = trpc.office.getAll.useQuery({});
   const { data: currencyList = [] } = trpc.currency.getAll.useQuery({});
 
-  const { data: ledgerResult, isLoading } = trpc.accounting.list.useQuery({
-    officeId: officeId !== "all" ? parseInt(officeId) : undefined,
-    currencyCode: currencyCode !== "all" ? currencyCode : undefined,
-    limit: 150,
-    offset: 0,
-  });
+  const { data: ledgerResult, isLoading } = { data: { rows: [] }, isLoading: false }; // TODO: Implement accounting router
 
-  const { data: summary = [] } = trpc.accounting.summary.useQuery({});
+  const { data: summary = [] } = { data: [] }; // TODO: Implement accounting router
 
   if (!user) return null;
 

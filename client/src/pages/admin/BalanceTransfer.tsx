@@ -28,16 +28,16 @@ export default function AdminBalanceTransfer() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [lastResult, setLastResult] = useState<{ fromBalance: string; toBalance: string } | null>(null);
 
-  const { data: offices = [], isLoading: officesLoading } = trpc.office.getAllWithBalances.useQuery({});
+  const { data: offices = [], isLoading: officesLoading } = trpc.office.getAll.useQuery({ activeOnly: true });
   const { data: currencyList = [] } = trpc.currency.getAll.useQuery({ activeOnly: true });
 
   const transferMutation = trpc.office.transferBalance.useMutation({
-    onSuccess: (result) => {
+    onSuccess: (result: any) => {
       toast.success("تم نقل الرصيد بنجاح");
       setLastResult(result);
       setShowConfirm(false);
       setForm({ fromOfficeId: "", toOfficeId: "", currencyCode: "USD", amount: "", notes: "" });
-      utils.office.getAllWithBalances.invalidate();
+      utils.office.getAll.invalidate();
       utils.office.getAll.invalidate();
     },
     onError: (err: any) => toast.error(err.message),
@@ -269,8 +269,8 @@ export default function AdminBalanceTransfer() {
                 className="flex-1"
                 disabled={transferMutation.isPending}
                 onClick={() => transferMutation.mutate({
-                  fromOfficeId: parseInt(form.fromOfficeId),
-                  toOfficeId: parseInt(form.toOfficeId),
+                  fromOfficeId: form.fromOfficeId,
+                  toOfficeId: form.toOfficeId,
                   currencyCode: form.currencyCode,
                   amount: form.amount,
                   notes: form.notes || undefined,

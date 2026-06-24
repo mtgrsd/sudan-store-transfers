@@ -52,11 +52,10 @@ export default function AdminReports() {
   const { data: summary, isLoading } = trpc.reports.getSummary.useQuery({
     fromDate: fromTs,
     toDate: toTs,
-    officeId: officeId !== "all" ? parseInt(officeId) : undefined,
   });
 
   const { refetch: fetchCsv } = trpc.receipt.exportCsv.useQuery(
-    { fromDate: fromTs, toDate: toTs, officeId: officeId !== "all" ? parseInt(officeId) : undefined },
+    { fromDate: fromTs, toDate: toTs },
     { enabled: false }
   );
 
@@ -77,10 +76,10 @@ export default function AdminReports() {
 
   if (!user) return null;
 
-  const totalCount = summary?.byStatus.reduce((s, r) => s + r.count, 0) ?? 0;
-  const totalReceived = summary?.byCurrency.reduce((s, r) => s + parseFloat(r.totalAmount), 0) ?? 0;
+  const totalCount = summary?.byStatus.reduce((s: number, r: any) => s + r.count, 0) ?? 0;
+  const totalReceived = summary?.byCurrency.reduce((s: number, r: any) => s + parseFloat(r.totalAmount), 0) ?? 0;
 
-  const pieData = summary?.byStatus.map((s) => ({
+  const pieData = summary?.byStatus.map((s: any) => ({
     name: statusLabels[s.status] ?? s.status,
     value: s.count,
     fill: statusColors[s.status] ?? "#94A3B8",
@@ -146,7 +145,7 @@ export default function AdminReports() {
             <Card className="bg-amber-50 border-0">
               <CardContent className="p-4 text-center">
                 <p className="text-2xl font-extrabold">
-                  {summary.byStatus.find((s) => s.status === "pending_deposit")?.count ?? 0}
+                  {(summary.byStatus as any[]).find((s: any) => s.status === "pending_deposit")?.count ?? 0}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">بانتظار الإيداع</p>
               </CardContent>
@@ -183,7 +182,7 @@ export default function AdminReports() {
               <CardContent>
                 {summary.byCurrency.length ? (
                   <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={summary.byCurrency.map((c) => ({ name: c.currencyCode, count: c.count, total: parseFloat(c.totalAmount) }))}>
+                    <BarChart data={summary.byCurrency.map((c: any) => ({ name: c.currencyCode, count: c.count, total: parseFloat(c.totalAmount) }))}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" /><YAxis />
                       <Tooltip />
@@ -200,7 +199,7 @@ export default function AdminReports() {
             <CardContent>
               {summary.daily.length ? (
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={summary.daily.map((d) => ({ day: d.day, count: d.count, total: parseFloat(d.totalAmount) }))}>
+                  <LineChart data={summary.daily.map((d: any) => ({ day: d.day, count: d.count, total: parseFloat(d.totalAmount) }))}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="day" /><YAxis />
                     <Tooltip />
@@ -225,7 +224,7 @@ export default function AdminReports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {summary.byOffice.map((o) => (
+                      {summary.byOffice.map((o: any) => (
                         <tr key={o.officeId} className="border-b">
                           <td className="px-4 py-2 font-medium">{o.officeName || "—"}</td>
                           <td className="px-4 py-2">{o.count}</td>

@@ -30,10 +30,7 @@ export default function NotificationBell() {
   const [unread, setUnread] = useState(0);
   const lastTsRef = useRef(getInitialTs());
 
-  const { refetch } = trpc.office.getNewSince.useQuery(
-    { sinceTs: lastTsRef.current },
-    { enabled: false }
-  );
+  const refetch = async () => ({ data: [] as NotifItem[] }); // TODO: Implement getNewSince
 
   const poll = useCallback(async () => {
     try {
