@@ -18,7 +18,7 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({
   children,
-  defaultTheme = "light",
+  defaultTheme = "dark",
   switchable = false,
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -29,12 +29,21 @@ export function ThemeProvider({
     return defaultTheme;
   });
 
+  // Apply dark class on mount
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("dark");
+    root.style.colorScheme = "dark";
+  }, []);
+
   useEffect(() => {
     const root = document.documentElement;
     if (theme === "dark") {
       root.classList.add("dark");
+      root.style.colorScheme = "dark";
     } else {
       root.classList.remove("dark");
+      root.style.colorScheme = "light";
     }
 
     if (switchable) {

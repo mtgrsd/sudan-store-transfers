@@ -408,23 +408,37 @@ export async function getReceiptAttachments(receiptId: number) {
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
 export async function writeAuditLog(data: {
-  entityType: string;
-  entityId: string;
-  action: string;
+  userId?: string;
   actorUserId?: string;
   actorName?: string;
   actorRole?: string;
+  action: string;
+  entityType?: string;
+  entityId?: string;
+  details?: object;
   previousValue?: object;
   newValue?: object;
+  notes?: string;
   ipAddress?: string;
   userAgent?: string;
-  notes?: string;
 }) {
   const d = await D();
+  const details = {
+    actorName: data.actorName,
+    actorRole: data.actorRole,
+    previousValue: data.previousValue,
+    newValue: data.newValue,
+    notes: data.notes,
+    ...data.details,
+  };
   await d.insert(auditLog).values({
-    ...data,
-    previousValue: data.previousValue ? JSON.stringify(data.previousValue) : undefined,
-    newValue: data.newValue ? JSON.stringify(data.newValue) : undefined,
+    userId: data.userId || data.actorUserId,
+    action: data.action,
+    entityType: data.entityType,
+    entityId: data.entityId,
+    details: Object.keys(details).length > 0 ? JSON.stringify(details) : undefined,
+    ipAddress: data.ipAddress,
+    userAgent: data.userAgent,
   });
 }
 
@@ -448,7 +462,7 @@ export async function getAuditLog(params: {
   const conditions: any[] = [];
   if (params.entityType) conditions.push(eq(auditLog.entityType, params.entityType));
   if (params.entityId) conditions.push(eq(auditLog.entityId, params.entityId));
-  if (params.actorUserId) conditions.push(eq(auditLog.actorUserId, params.actorUserId));
+  if (params.actorUserId) conditions.push(eq(auditLog.userId, params.actorUserId));
   if (params.fromDate) conditions.push(gte(auditLog.createdAt, params.fromDate));
   if (params.toDate) conditions.push(lte(auditLog.createdAt, params.toDate));
 

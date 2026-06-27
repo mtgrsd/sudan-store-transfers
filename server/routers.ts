@@ -179,7 +179,7 @@ const officeRouter = router({
         entityType: "office",
         entityId: String(office.id),
         action: "create",
-                actorUserId: ctx.user.id,
+        actorUserId: ctx.user.id,
         actorName: ctx.user.name ?? undefined,
         actorRole: ctx.user.role,
         newValue: office,
@@ -652,16 +652,57 @@ const receiptRouter = router({
       };
     }),
 
-  confirmWithPin: protectedProcedure
+  // Public confirmation with PIN (for customer/agent confirmation from public page)
+  confirmWithPin: publicProcedure
     .input(z.object({
-      receiptId: z.number(),
+      notificationNumber: z.string(),
       pin: z.string().length(4),
     }))
-    .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "agent" && ctx.user.role !== "employee" && ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN" });
+    .mutation(async ({ input }) => {
+      const receipt = await getReceiptByNotificationNumber(input.notificationNumber.toUpperCase().trim());
+      if (!receipt) throw new TRPCError({ code: "NOT_FOUND", message: "الإيصال غير موجود" });
+
+      // Verify PIN
+      if (receipt.secretPin !== input.pin) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "الرقم السري غير صحيح" });
       }
-      return { success: true };
+
+      // Check if already received
+      if (receipt.status === "received") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "تم استلام هذا الإيصال بالفعل" });
+      }
+
+      // Check if expired
+      if (receipt.expiresAt && receipt.expiresAt < Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "انتهت صلاحية هذا الإيصال" });
+      }
+
+      // Check if cancelled
+      if (receipt.status === "cancelled") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "هذا الإيصال ملغى" });
+      }
+
+      // Confirm the deposit
+      const updated = await confirmReceiptDeposit({
+        receiptId: receipt.id,
+        receivedByUserId: "system", // System confirmation
+        receivedNotes: "تأكيد عام من صفحة التحقق",
+      });
+
+      // Log the action
+      await writeAuditLog({
+        entityType: "receipt",
+        entityId: String(receipt.id),
+        action: "confirm_deposit_public",
+        actorUserId: "system",
+        actorName: "نظام",
+        actorRole: "system",
+        previousValue: { status: receipt.status },
+        newValue: { status: "received", receivedAt: Date.now() },
+        notes: `تأكيد عام من صفحة التحقق باستخدام الرقم السري`,
+      });
+
+      return updated;
     }),
 });
 

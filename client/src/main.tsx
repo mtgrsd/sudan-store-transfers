@@ -7,6 +7,12 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 
+// Initialize dark theme immediately on page load
+if (typeof window !== 'undefined') {
+  document.documentElement.classList.add('dark');
+  document.documentElement.style.colorScheme = 'dark';
+}
+
 const queryClient = new QueryClient();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
@@ -52,6 +58,10 @@ const trpcClient = trpc.createClient({
     }),
   ],
 });
+
+// Ensure dark theme is applied
+document.documentElement.classList.add('dark');
+document.documentElement.style.colorScheme = 'dark';
 
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>

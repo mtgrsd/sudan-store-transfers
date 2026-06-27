@@ -148,21 +148,17 @@ export const receiptAttachments = mysqlTable("receipt_attachments", {
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 export const auditLog = mysqlTable("audit_log", {
   id: int("id").primaryKey().autoincrement(),
-  entityType: varchar("entity_type", { length: 64 }).notNull(),   // 'receipt' | 'office' | 'user'
-  entityId: varchar("entity_id", { length: 128 }).notNull(),
-  action: varchar("action", { length: 64 }).notNull(),            // 'create' | 'status_change' | 'cancel' | 'receive' | 'attach' | etc.
-  actorUserId: varchar("actor_user_id", { length: 128 }),
-  actorName: varchar("actor_name", { length: 255 }),
-  actorRole: varchar("actor_role", { length: 32 }),
-  previousValue: text("previous_value"),                          // JSON snapshot
-  newValue: text("new_value"),                                    // JSON snapshot
-  ipAddress: varchar("ip_address", { length: 64 }),
-  userAgent: text("user_agent"),
-  notes: text("notes"),
-  createdAt: bigint("created_at", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
+  userId: varchar("userId", { length: 128 }),
+  action: varchar("action", { length: 64 }).notNull(),
+  entityType: varchar("entityType", { length: 64 }),
+  entityId: varchar("entityId", { length: 128 }),
+  details: text("details"),                                        // JSON details
+  ipAddress: varchar("ipAddress", { length: 64 }),
+  userAgent: text("userAgent"),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull().default(sql`(UNIX_TIMESTAMP()*1000)`),
 }, (t) => ({
   entityIdx: index("al_entity_idx").on(t.entityType, t.entityId),
-  actorIdx: index("al_actor_idx").on(t.actorUserId),
+  userIdx: index("al_user_idx").on(t.userId),
   actionIdx: index("al_action_idx").on(t.action),
   createdAtIdx: index("al_created_at_idx").on(t.createdAt),
 }));

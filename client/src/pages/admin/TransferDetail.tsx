@@ -344,14 +344,14 @@ export default function AdminTransferDetail() {
                 maxLength={8}
                 dir="ltr"
                 className="text-center text-xl font-mono tracking-widest"
-                onKeyDown={(e) => e.key === "Enter" && receipt && confirmPinMutation.mutate({ receiptId: receipt.id, pin: pinInput })}
+                onKeyDown={(e) => e.key === "Enter" && receipt && confirmPinMutation.mutate({ notificationNumber: receipt.notificationNumber, pin: pinInput })}
               />
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => { setShowConfirmPin(false); setPinInput(""); }}>إلغاء</Button>
               <Button
                 disabled={pinInput.length < 4 || confirmPinMutation.isPending}
-                onClick={() => receipt && confirmPinMutation.mutate({ receiptId: receipt.id, pin: pinInput })}
+                onClick={() => receipt && confirmPinMutation.mutate({ notificationNumber: receipt.notificationNumber, pin: pinInput })}
               >
                 {confirmPinMutation.isPending ? "جاري التحقق..." : "تأكيد"}
               </Button>

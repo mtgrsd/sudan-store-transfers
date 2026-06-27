@@ -27,6 +27,45 @@
   --font-arabic: 'Cairo', sans-serif;
 }
 
+/* ============ DARK THEME TOKENS ============ */
+:root.dark {
+  /* Dark Theme - Primary Colors */
+  --color-navy: #0A1628;
+  --color-royal: #2563EB;
+  
+  /* Dark Theme - Status Colors */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-neutral: #9CA3AF;
+  
+  /* Dark Theme - Neutral Colors */
+  --color-white: #1F2937;
+  --color-light-gray: #111827;
+  --color-border: #374151;
+  --color-text-primary: #F3F4F6;
+  --color-text-secondary: #D1D5DB;
+  --color-background: #0F172A;
+  
+  /* shadcn/ui CSS Variables for Dark Theme - HSL Format */
+  --background: 217 33% 6%;
+  --foreground: 210 40% 96%;
+  --card: 217 33% 17%;
+  --card-foreground: 210 40% 96%;
+  --popover: 217 33% 17%;
+  --popover-foreground: 210 40% 96%;
+  --muted: 215 13% 34%;
+  --muted-foreground: 215 14% 82%;
+  --accent: 217 91% 60%;
+  --accent-foreground: 210 40% 96%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 96%;
+  --border: 217 32% 22%;
+  --input: 217 33% 5%;
+  --ring: 217 91% 60%;
+  --radius: 0.5rem;
+}
+
 /* ============ BASE STYLES ============ */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -44,6 +83,17 @@ body {
   color: #111827;
   margin: 0;
   padding: 0;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark Theme Body */
+html.dark body {
+  background-color: #0F172A;
+  color: #F3F4F6;
+}
+
+html.dark * {
+  color-scheme: dark;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -51,6 +101,15 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
   margin: 0;
   color: #111827;
+}
+
+html.dark h1,
+html.dark h2,
+html.dark h3,
+html.dark h4,
+html.dark h5,
+html.dark h6 {
+  color: #F3F4F6;
 }
 
 h1 { font-size: 32px; line-height: 1.2; }
@@ -124,6 +183,18 @@ input, button, textarea, select {
   cursor: not-allowed;
 }
 
+html.dark .btn-primary {
+  background-color: #2563EB;
+}
+
+html.dark .btn-primary:hover {
+  background-color: #3B82F6;
+}
+
+html.dark .btn-primary:disabled {
+  opacity: 0.5;
+}
+
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -148,6 +219,17 @@ input, button, textarea, select {
 
 .btn-secondary:active {
   transform: scale(0.97);
+}
+
+html.dark .btn-secondary {
+  border-color: #4B5563;
+  background-color: #1F2937;
+  color: #F3F4F6;
+}
+
+html.dark .btn-secondary:hover {
+  background-color: #374151;
+  border-color: #6B7280;
 }
 
 .btn-danger {
@@ -235,6 +317,12 @@ input, button, textarea, select {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
+html.dark .card {
+  border-color: #374151;
+  background-color: #1F2937;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
 .card-header {
   margin-bottom: 16px;
   display: flex;
@@ -248,6 +336,10 @@ input, button, textarea, select {
   font-size: 18px;
   font-weight: 700;
   color: #111827;
+}
+
+html.dark .card-title {
+  color: #F3F4F6;
 }
 
 /* ============ INPUT STYLES ============ */
@@ -277,6 +369,26 @@ input, button, textarea, select {
   background-color: #F3F4F6;
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+html.dark .input-field {
+  border-color: #4B5563;
+  background-color: #111827;
+  color: #F3F4F6;
+}
+
+html.dark .input-field::placeholder {
+  color: #9CA3AF;
+}
+
+html.dark .input-field:focus {
+  border-color: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+html.dark .input-field:disabled {
+  background-color: #1F2937;
+  opacity: 0.5;
 }
 
 /* ============ BADGE STYLES ============ */
@@ -374,6 +486,28 @@ input, button, textarea, select {
   border-bottom: 1px solid #F3F4F6;
 }
 
+html.dark .table thead {
+  background-color: #1F2937;
+}
+
+html.dark .table th {
+  color: #D1D5DB;
+  border-bottom-color: #374151;
+}
+
+html.dark .table td {
+  color: #E5E7EB;
+  border-bottom-color: #374151;
+}
+
+html.dark .table tbody tr:hover {
+  background-color: #111827;
+}
+
+html.dark .table tbody tr:nth-child(even) {
+  background-color: #111827;
+}
+
 .table tbody tr:hover {
   background-color: #F9FAFB;
 }
@@ -467,6 +601,57 @@ input, button, textarea, select {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+html.dark .stat-card {
+  border-color: #374151;
+  background-color: #1F2937;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+html.dark .stat-card:hover {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Dark Theme - Additional shadcn/ui Fixes */
+html.dark [role="dialog"] {
+  background-color: #1F2937;
+  border-color: #374151;
+}
+
+html.dark [role="option"] {
+  background-color: #1F2937;
+  color: #F3F4F6;
+}
+
+html.dark [role="option"]:hover {
+  background-color: #374151;
+}
+
+html.dark [role="option"][aria-selected="true"] {
+  background-color: #2563EB;
+  color: #F3F4F6;
+}
+
+html.dark select {
+  background-color: #111827;
+  color: #F3F4F6;
+  border-color: #4B5563;
+}
+
+html.dark select option {
+  background-color: #1F2937;
+  color: #F3F4F6;
+}
+
+html.dark textarea {
+  background-color: #111827;
+  color: #F3F4F6;
+  border-color: #4B5563;
+}
+
+html.dark textarea::placeholder {
+  color: #9CA3AF;
+}
+
 .stat-card-icon {
   width: 48px;
   height: 48px;
@@ -505,11 +690,19 @@ input, button, textarea, select {
   letter-spacing: 0.5px;
 }
 
+html.dark .stat-label {
+  color: #D1D5DB;
+}
+
 .stat-value {
   margin-top: 8px;
   font-size: 28px;
   font-weight: 700;
   color: #111827;
+}
+
+html.dark .stat-value {
+  color: #F3F4F6;
 }
 
 .stat-change {
@@ -555,6 +748,12 @@ input, button, textarea, select {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+html.dark .receipt-card {
+  background: #1F2937;
+  border-color: #374151;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
 .receipt-header {
   text-align: center;
   margin-bottom: 20px;
@@ -578,6 +777,14 @@ input, button, textarea, select {
 .receipt-subtitle {
   font-size: 12px;
   color: #6B7280;
+}
+
+html.dark .receipt-title {
+  color: #2563EB;
+}
+
+html.dark .receipt-subtitle {
+  color: #D1D5DB;
 }
 
 .receipt-section {
@@ -609,6 +816,14 @@ input, button, textarea, select {
 .receipt-row-value {
   color: #111827;
   font-weight: 600;
+}
+
+html.dark .receipt-row-label {
+  color: #D1D5DB;
+}
+
+html.dark .receipt-row-value {
+  color: #F3F4F6;
 }
 
 /* ============ ANIMATIONS ============ */
@@ -676,6 +891,12 @@ input, button, textarea, select {
 .sudan-bg-navy { background-color: #0B1F4D; }
 .sudan-bg-royal { background-color: #1D4ED8; }
 .sudan-gradient { background: linear-gradient(135deg, #0B1F4D, #1D4ED8); }
+
+html.dark .sudan-navy { color: #60A5FA; }
+html.dark .sudan-royal { color: #93C5FD; }
+html.dark .sudan-bg-navy { background-color: #0A1628; }
+html.dark .sudan-bg-royal { background-color: #1E40AF; }
+html.dark .sudan-gradient { background: linear-gradient(135deg, #0A1628, #1E40AF); }
 
 /* Responsive Typography */
 @media (max-width: 640px) {

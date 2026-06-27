@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 const LOGO_URL = "/manus-storage/sudan-store-logo_c9d76f93.png";
 
@@ -14,10 +15,14 @@ const CURRENCY_NAMES: Record<string, string> = {
 };
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+  pending_deposit: { label: "قيد الانتظار", color: "#92400e", bg: "#fef3c7", icon: "⏳" },
+  pending_receipt: { label: "قيد الانتظار", color: "#92400e", bg: "#fef3c7", icon: "⏳" },
   pending: { label: "قيد الانتظار", color: "#92400e", bg: "#fef3c7", icon: "⏳" },
   confirmed: { label: "تم الصرف", color: "#065f46", bg: "#d1fae5", icon: "✅" },
+  received: { label: "تم الاستلام", color: "#065f46", bg: "#d1fae5", icon: "✅" },
   disbursed: { label: "تم الصرف", color: "#065f46", bg: "#d1fae5", icon: "✅" },
   cancelled: { label: "ملغاة", color: "#991b1b", bg: "#fee2e2", icon: "❌" },
+  expired: { label: "منتهية الصلاحية", color: "#7c2d12", bg: "#fed7aa", icon: "⚠️" },
 };
 
 export default function VerifyTransfer() {
@@ -26,11 +31,25 @@ export default function VerifyTransfer() {
   const [inputNumber, setInputNumber] = useState(params.notificationNumber || "");
   const [searchNumber, setSearchNumber] = useState(params.notificationNumber || "");
   const [searched, setSearched] = useState(!!params.notificationNumber);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [pinInput, setPinInput] = useState("");
 
-  const { data: transfer, isLoading, error } = trpc.receipt.publicVerify.useQuery(
+  const { data: transfer, isLoading, error, refetch } = trpc.receipt.publicVerify.useQuery(
     { notificationNumber: searchNumber },
     { enabled: searched && !!searchNumber, retry: false }
   );
+
+  const confirmMutation = trpc.receipt.confirmWithPin.useMutation({
+    onSuccess: () => {
+      toast.success("تم تأكيد الاستلام بنجاح!");
+      setPinInput("");
+      setShowConfirmDialog(false);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(error.message || "فشل تأكيد الاستلام");
+    },
+  });
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +58,20 @@ export default function VerifyTransfer() {
     setSearched(true);
   };
 
-  const statusInfo = transfer ? (STATUS_MAP[transfer.status] || STATUS_MAP.pending) : null;
+  const handleConfirmReceipt = () => {
+    if (pinInput.length !== 4) {
+      toast.error("الرقم السري يجب أن يكون 4 أرقام");
+      return;
+    }
+    if (!transfer) return;
+    confirmMutation.mutate({
+      notificationNumber: transfer.notificationNumber,
+      pin: pinInput,
+    });
+  };
+
+  const statusInfo = transfer ? (STATUS_MAP[transfer.status] || STATUS_MAP.pending_deposit) : null;
+  const canConfirm = transfer && transfer.status === "pending_deposit" && !transfer.receivedAt;
 
   return (
     <div
@@ -212,7 +244,6 @@ export default function VerifyTransfer() {
                     border: "2px solid #fee2e2",
                   }}
                 >
-                  {/* Step 7: Prevent reuse - show clear error */}
                   <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>❌</div>
                   <h3
                     style={{
@@ -332,6 +363,44 @@ export default function VerifyTransfer() {
                       ))}
                   </div>
 
+                  {/* Confirm Button - Only show if pending and not received */}
+                  {canConfirm && (
+                    <div
+                      style={{
+                        marginTop: "1.5rem",
+                        paddingTop: "1rem",
+                        borderTop: "1px solid #e5e7eb",
+                      }}
+                    >
+                      <button
+                        onClick={() => setShowConfirmDialog(true)}
+                        style={{
+                          width: "100%",
+                          background: "linear-gradient(135deg, #10b981, #059669)",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "0.75rem",
+                          padding: "0.75rem 1.25rem",
+                          fontSize: "0.875rem",
+                          fontWeight: "700",
+                          fontFamily: "'Cairo', sans-serif",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLButtonElement).style.background = "linear-gradient(135deg, #059669, #047857)";
+                          (e.target as HTMLButtonElement).style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLButtonElement).style.background = "linear-gradient(135deg, #10b981, #059669)";
+                          (e.target as HTMLButtonElement).style.transform = "translateY(0)";
+                        }}
+                      >
+                        ✅ تأكيد الاستلام
+                      </button>
+                    </div>
+                  )}
+
                   {/* Security Note */}
                   <div
                     style={{
@@ -379,6 +448,116 @@ export default function VerifyTransfer() {
           )}
         </div>
       </main>
+
+      {/* Confirm Dialog */}
+      {showConfirmDialog && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            setShowConfirmDialog(false);
+            setPinInput("");
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "1.25rem",
+              padding: "2rem",
+              maxWidth: "400px",
+              width: "90%",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ fontSize: "1.25rem", fontWeight: "800", color: "#1a2e6b", marginBottom: "1rem", textAlign: "center" }}>
+              تأكيد الاستلام
+            </h2>
+
+            <p style={{ fontSize: "0.875rem", color: "#6b7280", marginBottom: "1.5rem", textAlign: "center" }}>
+              أدخل الرقم السري المكون من 4 أرقام لتأكيد استلام المبلغ
+            </p>
+
+            <div style={{ marginBottom: "1.5rem" }}>
+              <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "700", color: "#1a2e6b", marginBottom: "0.5rem" }}>
+                الرقم السري
+              </label>
+              <input
+                type="text"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+                placeholder="0000"
+                maxLength={4}
+                style={{
+                  width: "100%",
+                  borderRadius: "0.75rem",
+                  border: "2px solid #e5e7eb",
+                  padding: "0.75rem 1rem",
+                  fontSize: "1.5rem",
+                  fontFamily: "monospace",
+                  letterSpacing: "0.5em",
+                  color: "#1f2937",
+                  outline: "none",
+                  textAlign: "center",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#1a2e6b"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#e5e7eb"; }}
+                autoFocus
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => {
+                  setShowConfirmDialog(false);
+                  setPinInput("");
+                }}
+                style={{
+                  borderRadius: "0.75rem",
+                  border: "1px solid #e5e7eb",
+                  padding: "0.5rem 1rem",
+                  fontSize: "0.875rem",
+                  fontWeight: "700",
+                  fontFamily: "'Cairo', sans-serif",
+                  cursor: "pointer",
+                  backgroundColor: "white",
+                  color: "#1f2937",
+                }}
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleConfirmReceipt}
+                disabled={pinInput.length < 4 || confirmMutation.isPending}
+                style={{
+                  borderRadius: "0.75rem",
+                  border: "none",
+                  padding: "0.5rem 1rem",
+                  fontSize: "0.875rem",
+                  fontWeight: "700",
+                  fontFamily: "'Cairo', sans-serif",
+                  cursor: pinInput.length < 4 || confirmMutation.isPending ? "not-allowed" : "pointer",
+                  backgroundColor: pinInput.length < 4 || confirmMutation.isPending ? "#d1d5db" : "linear-gradient(135deg, #10b981, #059669)",
+                  color: "white",
+                  opacity: pinInput.length < 4 || confirmMutation.isPending ? 0.6 : 1,
+                }}
+              >
+                {confirmMutation.isPending ? "جاري التأكيد..." : "تأكيد"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
